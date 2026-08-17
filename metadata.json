@@ -1,0 +1,6 @@
+{
+  "name": "Moshe Dora & Priya Wedding Invitation",
+  "description": "Lush jungle & Eden garden themed royal wedding celebration & interactive invitation for Moshe Dora & Priya featuring tropical rainforest canopies, botanical flora, wildlife animals, interactive calendar, photo gallery, wedding games, and blessings wall.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
