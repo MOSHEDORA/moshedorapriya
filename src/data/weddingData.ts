@@ -5,7 +5,7 @@ export const weddingInfo: CoupleProfile = {
     name: "Moshe Dora",
     fullName: "Velnati Moshe Dora",
     title: "The Groom",
-    parents: "Son of Velnati Family",
+    parents: "Son of Shri. Velnati Venkata Ramana & Smt. Velanti Bhanu Mathi, RAVIKAMPADU",
     bio: "Walking in faith, devotion, and gratitude, blessed to unite in holy matrimony with his beloved Priya under God's divine grace.",
     image: "/assets/GROOM.png"
   },
@@ -13,7 +13,7 @@ export const weddingInfo: CoupleProfile = {
     name: "Priya",
     fullName: "Nelluri Priya",
     title: "The Bride",
-    parents: "Daughter of Nelluri Family",
+    parents: "Daughter of Shri. Nelluri John Babu & Smt. Swarna, LINGAMPARTHI",
     bio: "Radiant in grace, humility, and Christian virtues, daughter of the Nelluri family, stepping joyfully into this sacred matrimonial covenant.",
     image: "/assets/BRIDE.jpg"
   },
@@ -36,7 +36,7 @@ export const defaultPhotos: PhotoItem[] = [
     id: "photo-1",
     title: "Royal Couple — Moshe Dora & Priya",
     category: "couple",
-    imageUrl: "/assets/DSC04710.JPG",
+    imageUrl: "/assets/DSC04713.JPG",
     caption: "Velnati Moshe Dora & Nelluri Priya — United in Sacred Matrimony under God's Grace."
   },
   {
@@ -44,14 +44,14 @@ export const defaultPhotos: PhotoItem[] = [
     title: "The Groom — Velnati Moshe Dora",
     category: "portrait",
     imageUrl: "/assets/GROOM.png",
-    caption: "Son of Velnati Family, joyfully awaiting this divine milestone."
+    caption: "Son of Shri. Velnati Venkata Ramana & Smt. Velanti Bhanu Mathi"
   },
   {
     id: "photo-3",
     title: "The Bride — Nelluri Priya",
     category: "portrait",
     imageUrl: "/assets/BRIDE.jpg",
-    caption: "Daughter of Nelluri Family, adorned in grace, humility, and devotion."
+    caption: "Daughter of Shri. Nelluri John Babu & Smt. Swarna"
   },
   {
     id: "photo-4",
@@ -64,7 +64,7 @@ export const defaultPhotos: PhotoItem[] = [
     id: "photo-5",
     title: "Holy Covenant & Fellowship",
     category: "moments",
-    imageUrl: "/assets/DSC04767.JPG",
+    imageUrl: "/assets/DSC04747.JPG",
     caption: "A cord of three strands is not quickly broken — Ecclesiastes 4:12."
   }
 ];
@@ -111,7 +111,7 @@ export const weddingEvents: WeddingEvent[] = [
     time: "10:00 AM – 11:30 AM IST",
     formattedDateTime: "Thursday, Sep 3, 2026 at 10:00 AM",
     venue: "Main Sacred Sanctuary Stage, Vedika Function Hall",
-    dressCode: "Traditional Royal / Elegant Formal Attire",
+    dressCode: "Whatever You Like",
     description: "Sacred Christian marriage ceremony with worship, scripture readings, exchange of holy vows, wedding rings, and pastoral benediction.",
     icon: "Church",
     color: "#0F3D32"
