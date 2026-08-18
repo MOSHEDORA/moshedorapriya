@@ -7,7 +7,7 @@ export const weddingInfo: CoupleProfile = {
     title: "The Groom",
     parents: "Son of Velnati Family",
     bio: "Walking in faith, devotion, and gratitude, blessed to unite in holy matrimony with his beloved Priya under God's divine grace.",
-    image: "/assets/DSC04721.JPG"
+    image: "/assets/GROOM.png"
   },
   bride: {
     name: "Priya",
@@ -15,7 +15,7 @@ export const weddingInfo: CoupleProfile = {
     title: "The Bride",
     parents: "Daughter of Nelluri Family",
     bio: "Radiant in grace, humility, and Christian virtues, daughter of the Nelluri family, stepping joyfully into this sacred matrimonial covenant.",
-    image: "/assets/DSC04747.JPG"
+    image: "/assets/BRIDE.jpg"
   },
   familyTitle: "Velnati & Nelluri Families' Royal Wedding Invitation",
   weddingDate: "2026-09-03T10:00:00+05:30",
@@ -36,28 +36,28 @@ export const defaultPhotos: PhotoItem[] = [
     id: "photo-1",
     title: "Royal Couple — Moshe Dora & Priya",
     category: "couple",
-    imageUrl: "/assets/DSC04713.JPG",
+    imageUrl: "/assets/DSC04710.JPG",
     caption: "Velnati Moshe Dora & Nelluri Priya — United in Sacred Matrimony under God's Grace."
   },
   {
     id: "photo-2",
     title: "The Groom — Velnati Moshe Dora",
     category: "portrait",
-    imageUrl: "/assets/DSC04721.JPG",
+    imageUrl: "/assets/GROOM.png",
     caption: "Son of Velnati Family, joyfully awaiting this divine milestone."
   },
   {
     id: "photo-3",
     title: "The Bride — Nelluri Priya",
     category: "portrait",
-    imageUrl: "/assets/DSC04747.JPG",
+    imageUrl: "/assets/BRIDE.jpg",
     caption: "Daughter of Nelluri Family, adorned in grace, humility, and devotion."
   },
   {
     id: "photo-4",
     title: "Sacred Celebration & Joy",
     category: "moments",
-    imageUrl: "/assets/DSC04710.JPG",
+    imageUrl: "/assets/DSC04721.JPG",
     caption: "Joyous celebration and blessed moments shared with family and loved ones."
   },
   {
