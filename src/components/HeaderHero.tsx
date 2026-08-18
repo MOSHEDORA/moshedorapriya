@@ -1,20 +1,7 @@
 import React from 'react';
-import { Calendar, MapPin, Sparkles, Navigation, Camera, Heart, Clock } from 'lucide-react';
 import { weddingInfo, defaultPhotos } from '../data/weddingData';
 
-interface HeaderHeroProps {
-  onOpenCalendar: () => void;
-  onOpenVenue: () => void;
-  onOpenGallery: () => void;
-  onOpenBlessings: () => void;
-}
-
-export const HeaderHero: React.FC<HeaderHeroProps> = ({
-  onOpenCalendar,
-  onOpenVenue,
-  onOpenGallery,
-  onOpenBlessings
-}) => {
+export const HeaderHero: React.FC = () => {
   const coupleHeroPhoto = defaultPhotos[0]?.imageUrl;
 
   return (
@@ -62,8 +49,18 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
       </div>
 
       <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
+        {/* Biblical Verse Card - Prominently at Top */}
+        <div className="max-w-xl mx-auto p-3.5 sm:p-4 rounded-xl border border-[#D4AF37]/60 bg-[#FFFDF9]/95 shadow-sm relative mb-4">
+          <p className="font-cormorant italic text-base sm:text-lg text-[#0F3D32] leading-relaxed">
+            "{weddingInfo.biblicalVerse.quote}"
+          </p>
+          <p className="font-cinzel text-xs uppercase tracking-widest text-[#5E1626] font-semibold mt-1">
+            — {weddingInfo.biblicalVerse.reference}
+          </p>
+        </div>
+
         {/* Monogram Badge (Pure Wedding Title) */}
-        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs uppercase tracking-[0.25em] font-semibold mb-4 border border-[#D4AF37]/60 shadow-md">
+        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs uppercase tracking-[0.25em] font-semibold mb-3 border border-[#D4AF37]/60 shadow-md">
           <span className="text-sm">🌿</span>
           <span>Holy Matrimony Celebration</span>
           <span className="text-sm">🌿</span>
@@ -118,92 +115,6 @@ export const HeaderHero: React.FC<HeaderHeroProps> = ({
         <p className="font-cinzel text-xs sm:text-sm tracking-[0.18em] uppercase text-[#2A2A2A]/85 max-w-2xl mx-auto leading-relaxed">
           Cordially request the honour of your esteemed presence and prayerful blessings on our auspicious wedding day
         </p>
-
-        {/* Highlighted Date and Venue Primary Interactive Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-6 w-full max-w-2xl px-2">
-          {/* Highlighted Date Card */}
-          <button
-            onClick={onOpenCalendar}
-            className="group p-4 rounded-2xl border-2 border-[#D4AF37] bg-gradient-to-br from-[#FFFDF9] via-[#FBF6EC] to-[#FFFDF9] text-left hover:shadow-xl hover:border-[#0F3D32] transition-all cursor-pointer shadow-md relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-16 h-16 bg-[radial-gradient(circle_at_100%_0%,rgba(212,175,55,0.25),transparent_70%)] pointer-events-none" />
-            <div className="flex items-center gap-2 text-xs font-cinzel uppercase tracking-widest text-[#0F3D32] font-bold mb-1">
-              <Calendar className="w-4 h-4 text-[#C59B27] group-hover:scale-110 transition-transform" />
-              <span>Auspicious Wedding Date</span>
-            </div>
-            <div className="font-decorative text-lg sm:text-xl font-bold text-[#5E1626]">
-              Thursday, Sep 03, 2026
-            </div>
-            <div className="text-xs font-cinzel text-[#0F3D32] font-semibold mt-0.5">
-              10:00 AM IST · Holy Matrimony &amp; Grand Feast
-            </div>
-          </button>
-
-          {/* Highlighted Venue Card */}
-          <button
-            onClick={onOpenVenue}
-            className="group p-4 rounded-2xl border-2 border-[#D4AF37] bg-gradient-to-br from-[#FFFDF9] via-[#FBF6EC] to-[#FFFDF9] text-left hover:shadow-xl hover:border-[#0F3D32] transition-all cursor-pointer shadow-md relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-16 h-16 bg-[radial-gradient(circle_at_100%_0%,rgba(15,61,50,0.2),transparent_70%)] pointer-events-none" />
-            <div className="flex items-center gap-2 text-xs font-cinzel uppercase tracking-widest text-[#0F3D32] font-bold mb-1">
-              <MapPin className="w-4 h-4 text-[#C59B27] group-hover:scale-110 transition-transform" />
-              <span>Wedding Venue</span>
-            </div>
-            <div className="font-decorative text-lg sm:text-xl font-bold text-[#0F3D32]">
-              Vedika Function Hall
-            </div>
-            <div className="text-xs font-cinzel text-[#996515] font-semibold mt-0.5">
-              Grand A/C Auditorium · Yeleswaram
-            </div>
-          </button>
-        </div>
-
-        {/* Biblical Verse Card */}
-        <div className="max-w-xl mx-auto p-4 rounded-xl border border-[#D4AF37]/60 bg-[#FFFDF9]/95 shadow-sm relative">
-          <p className="font-cormorant italic text-base sm:text-lg text-[#0F3D32] leading-relaxed">
-            "{weddingInfo.biblicalVerse.quote}"
-          </p>
-          <p className="font-cinzel text-xs uppercase tracking-widest text-[#5E1626] font-semibold mt-1">
-            — {weddingInfo.biblicalVerse.reference}
-          </p>
-        </div>
-
-        {/* Interactive Quick Action Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mt-6">
-          <a
-            href="https://maps.app.goo.gl/gLeSdH2zKB5729Lb6"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-[#D4AF37] via-[#C59B27] to-[#996515] text-[#2b2205] font-cinzel text-xs sm:text-sm font-bold tracking-wider uppercase hover:shadow-[0_0_20px_rgba(212,175,55,0.5)] transition-all duration-300 shadow-md"
-          >
-            <Navigation className="w-4 h-4 fill-current" />
-            <span>Open Google Maps Location</span>
-          </a>
-
-          <button
-            onClick={onOpenCalendar}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[#0F3D32] text-[#0F3D32] font-cinzel text-xs sm:text-sm font-semibold tracking-wider hover:bg-[#0F3D32] hover:text-[#FFFDF9] transition-all bg-white/90 shadow-xs cursor-pointer"
-          >
-            <Calendar className="w-4 h-4 text-[#C59B27]" />
-            <span>Wedding Date &amp; Countdown</span>
-          </button>
-
-          <button
-            onClick={onOpenGallery}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[#D4AF37] text-[#5E1626] font-cinzel text-xs sm:text-sm font-semibold tracking-wider hover:bg-[#5E1626] hover:text-white transition-all bg-white/90 shadow-xs cursor-pointer"
-          >
-            <Camera className="w-4 h-4" />
-            <span>Photo Gallery</span>
-          </button>
-
-          <button
-            onClick={onOpenBlessings}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[#0F3D32]/40 text-[#0F3D32] font-cinzel text-xs sm:text-sm font-semibold tracking-wider hover:bg-[#0F3D32] hover:text-white transition-all bg-white/90 shadow-xs cursor-pointer"
-          >
-            <Heart className="w-4 h-4 text-[#C59B27]" />
-            <span>Guest Blessings</span>
-          </button>
-        </div>
       </div>
     </section>
   );

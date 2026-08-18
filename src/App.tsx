@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  Calendar, 
-  MapPin, 
-  Heart, 
-  Camera, 
-  Clock, 
-  Sparkles, 
-  Crown, 
   Menu, 
   X,
   MessageSquareHeart
@@ -16,7 +9,6 @@ import { CoupleSection } from './components/CoupleSection';
 import { InteractiveCalendar } from './components/InteractiveCalendar';
 import { CreativeVenueSection } from './components/CreativeVenueSection';
 import { PhotoGallery } from './components/PhotoGallery';
-import { EventTimeline } from './components/EventTimeline';
 import { WeddingFunGame } from './components/WeddingFunGame';
 import { BlessingsWall } from './components/BlessingsWall';
 import { MusicPlayer } from './components/MusicPlayer';
@@ -70,34 +62,22 @@ export default function App() {
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex items-center gap-5 lg:gap-6 font-cinzel text-xs font-semibold uppercase tracking-wider text-[#2A2A2A]">
             <button 
-              onClick={() => scrollToSection('couple')}
-              className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
-            >
-              The Couple
-            </button>
-            <button 
               onClick={() => scrollToSection('calendar')}
               className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
             >
-              Calendar
+              Calendar &amp; Countdown
             </button>
             <button 
               onClick={() => scrollToSection('venue')}
               className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
             >
-              Venue
+              Venue &amp; Location
             </button>
             <button 
-              onClick={() => scrollToSection('gallery')}
+              onClick={() => scrollToSection('couple')}
               className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
             >
-              Gallery
-            </button>
-            <button 
-              onClick={() => scrollToSection('schedule')}
-              className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
-            >
-              Programme
+              The Couple
             </button>
             <button 
               onClick={() => scrollToSection('game')}
@@ -110,6 +90,12 @@ export default function App() {
               className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
             >
               Blessings
+            </button>
+            <button 
+              onClick={() => scrollToSection('gallery')}
+              className="hover:text-[#996515] transition-colors py-1 cursor-pointer"
+            >
+              Gallery
             </button>
           </nav>
 
@@ -154,12 +140,6 @@ export default function App() {
               🌿 View Wedding Gates
             </button>
             <button
-              onClick={() => scrollToSection('couple')}
-              className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
-            >
-              👑 The Couple &amp; Lineage
-            </button>
-            <button
               onClick={() => scrollToSection('calendar')}
               className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
             >
@@ -169,19 +149,13 @@ export default function App() {
               onClick={() => scrollToSection('venue')}
               className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
             >
-              📍 Vedika Function Hall &amp; Map
+              📍 Vedika Function Hall &amp; Location
             </button>
             <button
-              onClick={() => scrollToSection('gallery')}
+              onClick={() => scrollToSection('couple')}
               className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
             >
-              📷 Photo Gallery
-            </button>
-            <button
-              onClick={() => scrollToSection('schedule')}
-              className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
-            >
-              ⏰ Programme &amp; Order of Service
+              👑 The Couple &amp; Lineage
             </button>
             <button
               onClick={() => scrollToSection('game')}
@@ -195,47 +169,45 @@ export default function App() {
             >
               ✍️ Guest Blessings &amp; Prayers
             </button>
+            <button
+              onClick={() => scrollToSection('gallery')}
+              className="block w-full text-left py-1.5 text-[#0F3D32] font-semibold"
+            >
+              📷 Photo Gallery
+            </button>
           </div>
         )}
       </header>
 
       {/* Main Content Sections */}
       <main>
-        {/* Hero Section with Highlighted Date and Place */}
-        <HeaderHero
-          onOpenCalendar={() => scrollToSection('calendar')}
-          onOpenVenue={() => scrollToSection('venue')}
-          onOpenGallery={() => scrollToSection('gallery')}
-          onOpenBlessings={() => scrollToSection('blessings')}
-        />
+        {/* Hero Section with John 2:2 Verse at Top */}
+        <HeaderHero />
 
-        {/* The Couple Profile & Featured Portrait Section */}
+        {/* Countdown and Calendar (Positioned Above Location) */}
+        <InteractiveCalendar />
+
+        {/* Wedding Venue & Location Guide */}
+        <CreativeVenueSection />
+
+        {/* The Couple Profile & Lineage */}
         <CoupleSection
           photos={photos}
           onSelectPhoto={(photo) => setSelectedPhoto(photo)}
         />
 
-        {/* Interactive Calendar with Month Grid, Countdown and 1-Click Sync */}
-        <InteractiveCalendar />
+        {/* Interactive Wedding Fun Games */}
+        <WeddingFunGame />
 
-        {/* Creative Venue Explorer with Live Interactive Map & Route Transit */}
-        <CreativeVenueSection />
+        {/* Guest Blessings & Prayer Wall */}
+        <BlessingsWall />
 
-        {/* Photo Album & Picture Gallery */}
+        {/* Photo Album & Picture Gallery (Single Unified Album - Moved to Last) */}
         <PhotoGallery
           photos={photos}
           selectedPhoto={selectedPhoto}
           onSelectPhoto={(photo) => setSelectedPhoto(photo)}
         />
-
-        {/* Programme Timeline & Order of Service */}
-        <EventTimeline />
-
-        {/* Interactive Wedding Fun Games: Shoe Game, Ring in Kalasha, Duty Fortune Wheel */}
-        <WeddingFunGame />
-
-        {/* Guest Blessings & Prayer Wall */}
-        <BlessingsWall />
       </main>
 
       {/* Background Shehnai / Music Player Floating Control */}

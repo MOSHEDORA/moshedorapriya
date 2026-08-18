@@ -78,9 +78,44 @@ export const WeddingFunGame: React.FC = () => {
 
   const [recentPointFlyout, setRecentPointFlyout] = useState<{ team: 'moshe' | 'priya'; pts: number } | null>(null);
 
-  // Helper to persist scores
-  const addPointsToTeam = (points: number, targetTeam?: 'moshe' | 'priya') => {
+  // Sync with global shared scores on mount & poll every 3 seconds
+  useEffect(() => {
+    let isMounted = true;
+    const fetchGlobalScores = async () => {
+      try {
+        const res = await fetch('/api/scores');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data) {
+            const nextScores = {
+              moshe: Number(data.moshe) || 0,
+              priya: Number(data.priya) || 0,
+              totalPlays: Number(data.totalPlays) || 0
+            };
+            setTeamScores(nextScores);
+            try {
+              localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(nextScores));
+            } catch {}
+          }
+        }
+      } catch (e) {
+        // Fallback gracefully
+      }
+    };
+
+    fetchGlobalScores();
+    const interval = setInterval(fetchGlobalScores, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Helper to persist scores globally across all users & locally
+  const addPointsToTeam = async (points: number, targetTeam?: 'moshe' | 'priya') => {
     const team = targetTeam || userTeam;
+
+    // 1. Optimistic Local Update
     setTeamScores(prev => {
       const next = {
         ...prev,
@@ -93,9 +128,30 @@ export const WeddingFunGame: React.FC = () => {
       return next;
     });
 
-    // Show temporary flyout animation
+    // 2. Show temporary flyout animation
     setRecentPointFlyout({ team, pts: points });
     setTimeout(() => setRecentPointFlyout(null), 2000);
+
+    // 3. Post to backend server so all other users get points in real-time
+    try {
+      const res = await fetch('/api/scores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team, points })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result?.scores) {
+          setTeamScores({
+            moshe: Number(result.scores.moshe) || 0,
+            priya: Number(result.scores.priya) || 0,
+            totalPlays: Number(result.scores.totalPlays) || 0
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Network sync notice (saved locally):', err);
+    }
   };
 
   const handleSelectTeam = (team: 'moshe' | 'priya') => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, MessageSquare, Send, Sparkles, User, ThumbsUp } from 'lucide-react';
 import { initialBlessings } from '../data/weddingData';
 import { BlessingNote } from '../types';
@@ -6,13 +6,46 @@ import { ScrollReveal } from './ScrollReveal';
 
 export const BlessingsWall: React.FC = () => {
   const [blessings, setBlessings] = useState<BlessingNote[]>(() => {
-    const saved = localStorage.getItem('moshe_priya_blessings');
-    return saved ? JSON.parse(saved) : initialBlessings;
+    try {
+      const saved = localStorage.getItem('moshe_priya_blessings');
+      return saved ? JSON.parse(saved) : initialBlessings;
+    } catch {
+      return initialBlessings;
+    }
   });
 
   const [newName, setNewName] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newMessage, setNewMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync blessings from server periodically
+  useEffect(() => {
+    let isMounted = true;
+    const fetchBlessings = async () => {
+      try {
+        const res = await fetch('/api/blessings');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data)) {
+            setBlessings(data);
+            try {
+              localStorage.setItem('moshe_priya_blessings', JSON.stringify(data));
+            } catch {}
+          }
+        }
+      } catch (err) {
+        // graceful offline fallback
+      }
+    };
+
+    fetchBlessings();
+    const interval = setInterval(fetchBlessings, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const quickWishes = [
     "God bless your sacred union with endless peace & joy! ✨",
@@ -21,17 +54,30 @@ export const BlessingsWall: React.FC = () => {
     "Ecclesiastes 4:12 — A cord of three strands is never broken! 🕊️"
   ];
 
-  const handleLike = (id: string) => {
-    const updated = blessings.map(b => b.id === id ? { ...b, likes: b.likes + 1 } : b);
+  const handleLike = async (id: string) => {
+    // Optimistic local update
+    const updated = blessings.map(b => b.id === id ? { ...b, likes: (b.likes || 0) + 1 } : b);
     setBlessings(updated);
-    localStorage.setItem('moshe_priya_blessings', JSON.stringify(updated));
+    try {
+      localStorage.setItem('moshe_priya_blessings', JSON.stringify(updated));
+      const res = await fetch(`/api/blessings/${id}/like`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.blessings) {
+          setBlessings(data.blessings);
+        }
+      }
+    } catch (e) {
+      console.warn('Network sync notice for like:', e);
+    }
   };
 
-  const handleAddBlessing = (e: React.FormEvent) => {
+  const handleAddBlessing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newMessage.trim()) return;
+    if (!newName.trim() || !newMessage.trim() || isSubmitting) return;
 
-    const newNote: BlessingNote = {
+    setIsSubmitting(true);
+    const tempNote: BlessingNote = {
       id: `blessing-${Date.now()}`,
       name: newName.trim(),
       city: newCity.trim() || undefined,
@@ -41,13 +87,45 @@ export const BlessingsWall: React.FC = () => {
       isUserAdded: true
     };
 
-    const updated = [newNote, ...blessings];
+    // Optimistic local update
+    const updated = [tempNote, ...blessings];
     setBlessings(updated);
-    localStorage.setItem('moshe_priya_blessings', JSON.stringify(updated));
+    try {
+      localStorage.setItem('moshe_priya_blessings', JSON.stringify(updated));
+    } catch {}
+
+    const payloadName = newName.trim();
+    const payloadCity = newCity.trim();
+    const payloadMessage = newMessage.trim();
 
     setNewName('');
     setNewCity('');
     setNewMessage('');
+
+    try {
+      const res = await fetch('/api/blessings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: payloadName,
+          city: payloadCity,
+          message: payloadMessage
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.blessings) {
+          setBlessings(data.blessings);
+          try {
+            localStorage.setItem('moshe_priya_blessings', JSON.stringify(data.blessings));
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('Network sync notice for blessing:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

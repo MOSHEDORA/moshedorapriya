@@ -25,8 +25,6 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
   selectedPhoto,
   onSelectPhoto,
 }) => {
-  const [filter, setFilter] = useState<'all' | 'couple' | 'portrait' | 'moments'>('all');
-
   const [photoLikes, setPhotoLikes] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('moshe_priya_photo_likes_clean');
@@ -50,29 +48,25 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
     });
   };
 
-  const filteredPhotos = filter === 'all' 
-    ? photos 
-    : photos.filter(p => p.category === filter);
-
   const currentIndex = selectedPhoto 
-    ? filteredPhotos.findIndex(p => p.id === selectedPhoto.id)
+    ? photos.findIndex(p => p.id === selectedPhoto.id)
     : -1;
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (currentIndex > 0) {
-      onSelectPhoto(filteredPhotos[currentIndex - 1]);
+      onSelectPhoto(photos[currentIndex - 1]);
     } else {
-      onSelectPhoto(filteredPhotos[filteredPhotos.length - 1]);
+      onSelectPhoto(photos[photos.length - 1]);
     }
   };
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentIndex < filteredPhotos.length - 1) {
-      onSelectPhoto(filteredPhotos[currentIndex + 1]);
+    if (currentIndex < photos.length - 1) {
+      onSelectPhoto(photos[currentIndex + 1]);
     } else {
-      onSelectPhoto(filteredPhotos[0]);
+      onSelectPhoto(photos[0]);
     }
   };
 
@@ -109,37 +103,9 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
           </div>
         </ScrollReveal>
 
-        {/* Filter Tabs Centered with Botanical Border */}
-        <ScrollReveal direction="up" delay={100} threshold={0.15}>
-          <div className="flex items-center justify-center gap-2 mb-10 bg-white/90 p-2 sm:p-2.5 rounded-full border border-[#D4AF37]/60 shadow-sm max-w-md mx-auto">
-            {[
-              { key: 'all', label: 'All Photos', icon: ImageIcon },
-              { key: 'couple', label: 'Couple', icon: Heart },
-              { key: 'portrait', label: 'Portraits', icon: Users },
-              { key: 'moments', label: 'Celebration', icon: Smile }
-            ].map(cat => {
-              const IconComp = cat.icon;
-              return (
-                <button
-                  key={cat.key}
-                  onClick={() => setFilter(cat.key as any)}
-                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full font-cinzel text-xs font-semibold tracking-wider transition-all cursor-pointer ${
-                    filter === cat.key
-                      ? 'bg-[#0F3D32] text-[#F1DFA6] shadow-sm'
-                      : 'text-[#2A2A2A] hover:bg-[#FBF6EC] hover:text-[#0F3D32]'
-                  }`}
-                >
-                  <IconComp className="w-3.5 h-3.5" />
-                  <span>{cat.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </ScrollReveal>
-
-        {/* Photo Grid */}
+        {/* Photo Grid - All Photos in One Category */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7">
-          {filteredPhotos.map((photo, index) => {
+          {photos.map((photo, index) => {
             const likes = photoLikes[photo.id] || 0;
 
             return (
@@ -161,7 +127,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                     {/* Top Badges */}
                     <div className="absolute top-3 left-3">
                       <span className="bg-[#0F3D32]/90 backdrop-blur-xs text-[#F1DFA6] text-[10px] font-cinzel font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider border border-[#D4AF37]/40 shadow-xs">
-                        {photo.category}
+                        Wedding Album
                       </span>
                     </div>
 
@@ -194,7 +160,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                     </div>
 
                     <div className="mt-3 pt-2.5 border-t border-[#D4AF37]/25 flex items-center justify-between text-xs font-cinzel text-[#996515]">
-                      <span>Wedding Album</span>
+                      <span>Holy Matrimony Memories</span>
                       <span className="flex items-center gap-1 text-[#5E1626] font-semibold">
                         <Heart className={`w-3 h-3 ${likes > 0 ? 'fill-[#5E1626]' : ''}`} /> {likes > 0 ? `${likes} ${likes === 1 ? 'love' : 'loves'}` : 'Send Love'}
                       </span>
@@ -252,7 +218,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
               <div className="p-6 bg-[#FFFDF9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="font-cinzel text-xs uppercase tracking-widest text-[#996515] font-bold">
-                    {selectedPhoto.category}
+                    Wedding Album
                   </div>
                   <h3 className="font-decorative text-2xl text-[#0F3D32] font-bold">
                     {selectedPhoto.title}

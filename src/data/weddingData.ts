@@ -71,7 +71,7 @@ export const defaultPhotos: PhotoItem[] = [
 
 export const venueInfo: VenueDetail = {
   name: "Vedika Function Hall",
-  hallName: "Grand Central AC Auditorium & Banquet",
+  hallName: "Grand Central AC Auditorium & Dining Hall",
   addressLine1: "Main Road, Near Town Center",
   addressLine2: "Yeleswaram Mandal",
   city: "Yeleswaram",
@@ -84,7 +84,7 @@ export const venueInfo: VenueDetail = {
   contactNumber: "+91 98480 22334",
   amenities: [
     "Fully Air-Conditioned Grand Auditorium (1000+ Capacity)",
-    "Spacious Royal Dining & Banquet Hall",
+    "Spacious Dining Hall & Food Service Area",
     "Dedicated Valet & Vehicle Parking (200+ Cars)",
     "Deluxe Bridal & Groom AC Green Rooms",
     "Modern Acoustic Stage & Lighting System",
