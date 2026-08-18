@@ -84,3 +84,14 @@ export interface BlessingNote {
   isUserAdded?: boolean;
 }
 
+export interface LeaderboardPlayer {
+  id: string;
+  name: string;
+  phone: string;
+  score: number;
+  team: 'moshe' | 'priya';
+  gamesPlayed: number;
+  lastPlayed: string;
+}
+
+

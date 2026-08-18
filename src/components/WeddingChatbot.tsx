@@ -200,6 +200,19 @@ export const WeddingChatbot: React.FC = () => {
       };
     }
 
+    // Games & Leaderboard Query
+    if (q.includes('game') || q.includes('play') || q.includes('score') || q.includes('leaderboard') || q.includes('talambralu') || q.includes('varamala') || q.includes('kalasha') || q.includes('rank') || q.includes('ఆట') || q.includes('గేమ్') || q.includes('స్కోర్') || q.includes('లీడర్‌బోర్డ్') || q.includes('తలంబ్రాలు') || q.includes('వరమాల') || q.includes('కలశం')) {
+      return {
+        text: isTe
+          ? `🎮 వివాహ సరదా గేమ్స్ & లైవ్ లీడర్‌బోర్డ్:\n\n1. తలంబ్రాల ముత్యాల క్యాచ్ (30s)\n2. పవిత్ర వరమాల విసిరే ఛాలెంజ్\n3. బంగారు కలశం ఉంగరం ఆట\n\nమీ పేరు మరియు ఫోన్ నంబర్‌తో ఆడండి. మీరు ఆడిన ప్రతిసారీ మీ పాత మార్కులకు కొత్త మార్కులు కలుస్తాయి & లైవ్ లీడర్‌బోర్డ్‌లో 5 పేర్లు చొప్పున కనిపిస్తాయి!`
+          : `🎮 Eden Garden Wedding Games & Live Leaderboard:\n\n1. Talambralu Sacred Pearl Catch (30s)\n2. Sacred Varamala Toss Challenge\n3. Golden Kalasha Ring Quest\n\nEnter your Name & Phone number as your player ID. Whenever you play again with the same number, your new points add cumulatively to your score and rank you on the 5-per-page leaderboard!`,
+        actions: [
+          { label: isTe ? '🎮 ఆటలు ఆడండి' : '🎮 Play Wedding Games', actionType: 'scroll', value: 'game' },
+          { label: isTe ? '🏆 లీడర్‌బోర్డ్ చూడండి' : '🏆 View Leaderboard', actionType: 'scroll', value: 'leaderboard' }
+        ]
+      };
+    }
+
     // Default intelligent response
     return {
       text: isTe

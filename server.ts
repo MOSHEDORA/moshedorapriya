@@ -3,12 +3,23 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 
+interface LeaderboardEntry {
+  id: string; // phone-based id
+  name: string;
+  phone: string;
+  score: number;
+  team: "moshe" | "priya";
+  gamesPlayed: number;
+  lastPlayed: string;
+}
+
 interface LiveWeddingState {
   scores: {
     moshe: number;
     priya: number;
     totalPlays: number;
   };
+  leaderboard: Record<string, LeaderboardEntry>;
   blessings: Array<{
     id: string;
     name: string;
@@ -29,6 +40,7 @@ const defaultState: LiveWeddingState = {
     priya: 0,
     totalPlays: 0
   },
+  leaderboard: {},
   blessings: []
 };
 
@@ -48,6 +60,7 @@ try {
         priya: Number(parsed?.scores?.priya) || 0,
         totalPlays: Number(parsed?.scores?.totalPlays) || 0
       },
+      leaderboard: typeof parsed?.leaderboard === "object" && parsed?.leaderboard !== null ? parsed.leaderboard : {},
       blessings: Array.isArray(parsed?.blessings) ? parsed.blessings : []
     };
   } else {
@@ -72,7 +85,7 @@ async function startServer() {
   app.use(express.json());
 
   // -------------------------------------------------------------
-  // API ROUTES (SCORES & BLESSINGS SHARED ACROSS ALL USERS)
+  // API ROUTES (SCORES, LEADERBOARD & BLESSINGS SHARED ACROSS ALL USERS)
   // -------------------------------------------------------------
 
   // Get Live Global Scores
@@ -93,6 +106,59 @@ async function startServer() {
 
     saveStateToFile();
     res.json({ success: true, scores: liveState.scores });
+  });
+
+  // Get Leaderboard (sorted by score descending)
+  app.get("/api/leaderboard", (req, res) => {
+    const list = Object.values(liveState.leaderboard || {}).sort((a, b) => b.score - a.score);
+    res.json(list);
+  });
+
+  // Record / Add Marks to Player Score (Phone number as unique key)
+  app.post("/api/leaderboard", (req, res) => {
+    const { name, phone, points, team } = req.body;
+    if (!name || !phone || points === undefined) {
+      return res.status(400).json({ error: "Name, phone, and points are required." });
+    }
+
+    const cleanPhone = String(phone).replace(/[^\d+]/g, "").slice(-15);
+    const cleanName = String(name).trim().slice(0, 80);
+    const safePoints = Math.max(0, Math.min(Number(points) || 0, 5000));
+    const safeTeam = team === "priya" ? "priya" : "moshe";
+
+    if (!cleanPhone || cleanPhone.length < 4) {
+      return res.status(400).json({ error: "Invalid phone number." });
+    }
+
+    const existing = liveState.leaderboard[cleanPhone];
+    if (existing) {
+      existing.name = cleanName || existing.name;
+      existing.score = (existing.score || 0) + safePoints;
+      existing.team = safeTeam;
+      existing.gamesPlayed = (existing.gamesPlayed || 0) + 1;
+      existing.lastPlayed = new Date().toISOString();
+      liveState.leaderboard[cleanPhone] = existing;
+    } else {
+      liveState.leaderboard[cleanPhone] = {
+        id: `player_${cleanPhone}`,
+        name: cleanName,
+        phone: cleanPhone,
+        score: safePoints,
+        team: safeTeam,
+        gamesPlayed: 1,
+        lastPlayed: new Date().toISOString()
+      };
+    }
+
+    // Also contribute to team overall score
+    if (safePoints > 0) {
+      liveState.scores[safeTeam] += safePoints;
+      liveState.scores.totalPlays += 1;
+    }
+
+    saveStateToFile();
+    const sorted = Object.values(liveState.leaderboard).sort((a, b) => b.score - a.score);
+    res.json({ success: true, player: liveState.leaderboard[cleanPhone], leaderboard: sorted });
   });
 
   // Get Live Global Blessings

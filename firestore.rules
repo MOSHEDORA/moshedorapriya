@@ -2,12 +2,25 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Game scores collection - open for wedding guests to read and update
+    // Global team battle scores
     match /game_scores/{scoreId} {
       allow read: if true;
       allow create, update: if request.resource.data.moshe is number
                            && request.resource.data.priya is number
                            && request.resource.data.totalPlays is number;
+      allow delete: if false;
+    }
+
+    // Individual guest leaderboard (identified by unique phone number ID)
+    match /game_leaderboard/{playerId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.name is string
+                           && request.resource.data.name.size() > 0
+                           && request.resource.data.name.size() <= 100
+                           && request.resource.data.phone is string
+                           && request.resource.data.phone.size() >= 4
+                           && request.resource.data.score is number
+                           && request.resource.data.score >= 0;
       allow delete: if false;
     }
 

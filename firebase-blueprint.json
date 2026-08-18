@@ -24,6 +24,38 @@
       },
       "required": ["moshe", "priya", "totalPlays"]
     },
+    "GamePlayer": {
+      "title": "GamePlayer",
+      "description": "Individual guest player scores and ranking on the wedding leaderboard",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the player"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number used as unique identifier"
+        },
+        "score": {
+          "type": "number",
+          "description": "Cumulative total points scored by this player across all games"
+        },
+        "team": {
+          "type": "string",
+          "description": "Chosen team (moshe or priya)"
+        },
+        "gamesPlayed": {
+          "type": "number",
+          "description": "Number of game rounds completed"
+        },
+        "lastPlayed": {
+          "type": "string",
+          "description": "ISO timestamp of last gameplay"
+        }
+      },
+      "required": ["name", "phone", "score", "team", "gamesPlayed"]
+    },
     "Blessing": {
       "title": "Blessing",
       "description": "Guest blessing and prayer note",
@@ -57,6 +89,10 @@
     "/game_scores/{scoreId}": {
       "schema": "GameScores",
       "description": "Shared real-time scores for wedding fun games"
+    },
+    "/game_leaderboard/{playerId}": {
+      "schema": "GamePlayer",
+      "description": "Individual player leaderboard entries identified by phone number"
     },
     "/blessings/{blessingId}": {
       "schema": "Blessing",
