@@ -94,4 +94,22 @@ export interface LeaderboardPlayer {
   lastPlayed: string;
 }
 
+export interface MatchLog {
+  id: string;
+  playerName: string;
+  playerPhone: string;
+  team: 'moshe' | 'priya';
+  opponentTeam: 'moshe' | 'priya';
+  gameName: string;
+  outcome: 'won' | 'lost' | 'partial';
+  pointsWon: number;
+  pointsLost: number;
+  pointsTransferredToOpponent: number;
+  description: string;
+  teluguDescription: string;
+  timestamp: string; // ISO string
+  formattedTime: string;
+  formattedDate: string;
+}
+
 

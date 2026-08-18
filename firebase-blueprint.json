@@ -83,6 +83,70 @@
         }
       },
       "required": ["name", "message"]
+    },
+    "MatchHistory": {
+      "title": "MatchHistory",
+      "description": "Game match history entry recording player actions, point wins, losses, transfers, and timestamps",
+      "type": "object",
+      "properties": {
+        "playerName": {
+          "type": "string",
+          "description": "Name of the player"
+        },
+        "playerPhone": {
+          "type": "string",
+          "description": "Phone of the player"
+        },
+        "team": {
+          "type": "string",
+          "description": "Supported team (moshe or priya)"
+        },
+        "opponentTeam": {
+          "type": "string",
+          "description": "Opponent team"
+        },
+        "gameName": {
+          "type": "string",
+          "description": "Name of the game played"
+        },
+        "outcome": {
+          "type": "string",
+          "description": "Outcome of the game round (won, lost, partial)"
+        },
+        "pointsWon": {
+          "type": "number",
+          "description": "Points won in this round"
+        },
+        "pointsLost": {
+          "type": "number",
+          "description": "Points lost or penalized"
+        },
+        "pointsTransferredToOpponent": {
+          "type": "number",
+          "description": "Points transferred to the rival team"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed English narrative of the match outcome"
+        },
+        "teluguDescription": {
+          "type": "string",
+          "description": "Detailed Telugu narrative of the match outcome"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp"
+        },
+        "formattedTime": {
+          "type": "string",
+          "description": "Formatted time string"
+        },
+        "formattedDate": {
+          "type": "string",
+          "description": "Formatted date string"
+        }
+      },
+      "required": ["playerName", "gameName", "timestamp"]
     }
   },
   "firestore": {
@@ -93,6 +157,10 @@
     "/game_leaderboard/{playerId}": {
       "schema": "GamePlayer",
       "description": "Individual player leaderboard entries identified by phone number"
+    },
+    "/game_history/{historyId}": {
+      "schema": "MatchHistory",
+      "description": "Live match event timeline logs with point transfers and exact timings"
     },
     "/blessings/{blessingId}": {
       "schema": "Blessing",

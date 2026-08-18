@@ -21,7 +21,17 @@ service cloud.firestore {
                            && request.resource.data.phone.size() >= 4
                            && request.resource.data.score is number
                            && request.resource.data.score >= 0;
-      allow delete: if false;
+      allow delete: if true;
+    }
+
+    // Match history logs with point transfers, detailed narration and exact timestamps
+    match /game_history/{historyId} {
+      allow read: if true;
+      allow create: if request.resource.data.playerName is string
+                   && request.resource.data.playerName.size() > 0
+                   && request.resource.data.gameName is string;
+      allow update: if false;
+      allow delete: if true;
     }
 
     // Blessings collection - guests can post, read, and like blessings

@@ -20,21 +20,24 @@ import {
   User,
   Phone,
   Edit3,
-  X
+  X,
+  Lock,
+  ArrowRight,
+  ShieldAlert,
+  ArrowRightLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { doc, onSnapshot, setDoc, increment, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, increment, getDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ScrollReveal } from './ScrollReveal';
 import { useLanguage } from '../context/LanguageContext';
 import { WeddingLeaderboard } from './WeddingLeaderboard';
 
-// Persistent LocalStorage Keys (Genuine guest data)
+// Persistent LocalStorage Keys
 const STORAGE_TEAM_SCORES_KEY = 'moshe_priya_eden_scores_clean_v1';
 const STORAGE_USER_CHAMPION_KEY = 'moshe_priya_user_champion_clean_v1';
 const STORAGE_PLAYER_PROFILE_KEY = 'moshe_priya_player_profile_v1';
 
-// Clean initial state (Zero dummy values)
 const INITIAL_SCORES = {
   moshe: 0,
   priya: 0,
@@ -62,28 +65,73 @@ export const WeddingFunGame: React.FC = () => {
   const { language } = useLanguage();
 
   // ==========================================
-  // PLAYER IDENTITY (PHONE NUMBER + NAME AS ID)
+  // PLAYER IDENTITY & REGISTRATION GATE
   // ==========================================
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_PLAYER_PROFILE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        return {
-          name: parsed.name || '',
-          phone: parsed.phone || ''
-        };
+        if (parsed.name && parsed.phone) {
+          return {
+            name: parsed.name,
+            phone: parsed.phone
+          };
+        }
       }
     } catch {}
     return { name: '', phone: '' };
   });
 
-  const [playerCumulativeMarks, setPlayerCumulativeMarks] = useState<number>(0);
+  // Registration Form State
+  const [regName, setRegName] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regTeam, setRegTeam] = useState<'moshe' | 'priya'>('moshe');
+  const [regError, setRegError] = useState('');
+
+  // Profile Edit Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [modalName, setModalName] = useState(playerProfile.name);
-  const [modalPhone, setModalPhone] = useState(playerProfile.phone);
-  const [profileError, setProfileError] = useState('');
-  const [pendingScoreToAdd, setPendingScoreToAdd] = useState<number | null>(null);
+  const [modalName, setModalName] = useState('');
+  const [modalPhone, setModalPhone] = useState('');
+  const [modalError, setModalError] = useState('');
+
+  const [playerCumulativeMarks, setPlayerCumulativeMarks] = useState<number>(0);
+
+  // ==========================================
+  // TEAM SELECTION & LIVE SCORES
+  // ==========================================
+  const [userTeam, setUserTeam] = useState<'moshe' | 'priya'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_USER_CHAMPION_KEY);
+      return saved === 'priya' ? 'priya' : 'moshe';
+    } catch {
+      return 'moshe';
+    }
+  });
+
+  const [teamScores, setTeamScores] = useState<{ moshe: number; priya: number; totalPlays: number }>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_TEAM_SCORES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          moshe: Number(parsed.moshe) || 0,
+          priya: Number(parsed.priya) || 0,
+          totalPlays: Number(parsed.totalPlays) || 0
+        };
+      }
+    } catch {}
+    return INITIAL_SCORES;
+  });
+
+  const [recentPointFlyout, setRecentPointFlyout] = useState<{ 
+    team: 'moshe' | 'priya'; 
+    pts: number; 
+    playerName?: string;
+    isLoss?: boolean;
+    transferredTo?: 'moshe' | 'priya';
+    msg?: string;
+  } | null>(null);
 
   // Sync player cumulative marks from Firestore in real-time
   useEffect(() => {
@@ -107,37 +155,6 @@ export const WeddingFunGame: React.FC = () => {
 
     return () => unsubscribe();
   }, [playerProfile.phone]);
-
-  // ==========================================
-  // REAL GROOM VS BRIDE TEAM SCORES
-  // ==========================================
-  const [userTeam, setUserTeam] = useState<'moshe' | 'priya'>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_USER_CHAMPION_KEY);
-      return saved === 'priya' ? 'priya' : 'moshe';
-    } catch {
-      return 'moshe';
-    }
-  });
-
-  const [teamScores, setTeamScores] = useState<{ moshe: number; priya: number; totalPlays: number }>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_TEAM_SCORES_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          moshe: Number(parsed.moshe) || 0,
-          priya: Number(parsed.priya) || 0,
-          totalPlays: Number(parsed.totalPlays) || 0
-        };
-      }
-    } catch {
-      // Fallback to clean 0
-    }
-    return INITIAL_SCORES;
-  });
-
-  const [recentPointFlyout, setRecentPointFlyout] = useState<{ team: 'moshe' | 'priya'; pts: number; playerName?: string } | null>(null);
 
   // Sync global team scores
   useEffect(() => {
@@ -166,130 +183,65 @@ export const WeddingFunGame: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Write points to global team scores
-  const addPointsToTeam = async (points: number, targetTeam?: 'moshe' | 'priya') => {
-    const designatedTeam = targetTeam || userTeam;
-    if (points <= 0) return;
+  // Check if player is registered
+  const isRegistered = Boolean(playerProfile.name && playerProfile.phone);
 
-    setTeamScores(prev => {
-      const updated = {
-        ...prev,
-        [designatedTeam]: prev[designatedTeam] + points,
-        totalPlays: prev.totalPlays + 1
-      };
-      try {
-        localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-
-    try {
-      const scoresDocRef = doc(db, 'game_scores', 'global_scores');
-      await setDoc(
-        scoresDocRef,
-        {
-          [designatedTeam]: increment(points),
-          totalPlays: increment(1),
-          lastUpdated: new Date().toISOString()
-        },
-        { merge: true }
-      );
-    } catch (err) {
-      console.warn('Firestore score write fallback:', err);
-    }
-  };
-
-  // Record points cumulatively to player profile by phone number ID
-  const awardMarksToPlayer = async (points: number, customTeam?: 'moshe' | 'priya', activeProf?: PlayerProfile) => {
-    if (points <= 0) return;
-    const currentProf = activeProf || playerProfile;
-    const designatedTeam = customTeam || userTeam;
-
-    // Trigger visual celebration flyout
-    setRecentPointFlyout({ 
-      team: designatedTeam, 
-      pts: points, 
-      playerName: currentProf.name || undefined 
-    });
-    setTimeout(() => setRecentPointFlyout(null), 3500);
-
-    // If player has not registered phone and name yet, ask via modal and hold points in pending
-    if (!currentProf.phone || !currentProf.name) {
-      setPendingScoreToAdd(points);
-      setShowProfileModal(true);
-      return;
-    }
-
-    const cleanPhone = currentProf.phone.replace(/[^\d+]/g, '').slice(-15);
-    const playerId = `player_${cleanPhone}`;
-
-    // 1. Update player cumulative score in Firestore (adds to previous marks)
-    try {
-      const playerDocRef = doc(db, 'game_leaderboard', playerId);
-      await setDoc(
-        playerDocRef,
-        {
-          name: currentProf.name,
-          phone: currentProf.phone,
-          score: increment(points),
-          team: designatedTeam,
-          gamesPlayed: increment(1),
-          lastPlayed: new Date().toISOString()
-        },
-        { merge: true }
-      );
-    } catch (err) {
-      console.warn('Firestore player score increment fallback:', err);
-    }
-
-    // 2. Dual persistence via Server API
-    try {
-      await fetch('/api/leaderboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: currentProf.name,
-          phone: currentProf.phone,
-          points,
-          team: designatedTeam
-        })
-      });
-    } catch (e) {
-      console.warn('Server leaderboard write fallback:', e);
-    }
-
-    // 3. Add to overall team total
-    await addPointsToTeam(points, designatedTeam);
-  };
-
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // ==========================================
+  // REGISTRATION & PROFILE HANDLERS
+  // ==========================================
+  const handleInitialRegistration = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalName.trim()) {
-      setProfileError(language === 'te' ? 'దయచేసి మీ పేరు నమోదు చేయండి' : 'Please enter your name');
+    const cleanName = regName.trim();
+    const cleanPhone = regPhone.replace(/[^\d+]/g, '').trim();
+
+    if (!cleanName) {
+      setRegError(language === 'te' ? 'దయచేసి మీ పేరు నమోదు చేయండి' : 'Please enter your full name');
       return;
     }
-    const cleanPhone = modalPhone.replace(/[^\d+]/g, '').trim();
     if (!cleanPhone || cleanPhone.length < 5) {
-      setProfileError(language === 'te' ? 'దయచేసి సరైన ఫోన్ నంబర్ నమోదు చేయండి' : 'Please enter a valid phone number');
+      setRegError(language === 'te' ? 'దయచేసి సరైన ఫోన్ నంబర్ నమోదు చేయండి' : 'Please enter a valid phone number');
       return;
     }
 
-    setProfileError('');
-    const newProfile = {
-      name: modalName.trim(),
-      phone: cleanPhone
-    };
-    setPlayerProfile(newProfile);
+    setRegError('');
+    const newProf = { name: cleanName, phone: cleanPhone };
+    setPlayerProfile(newProf);
+    setUserTeam(regTeam);
+
     try {
-      localStorage.setItem(STORAGE_PLAYER_PROFILE_KEY, JSON.stringify(newProfile));
+      localStorage.setItem(STORAGE_PLAYER_PROFILE_KEY, JSON.stringify(newProf));
+      localStorage.setItem(STORAGE_USER_CHAMPION_KEY, regTeam);
+    } catch {}
+
+    confetti({
+      particleCount: 60,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: regTeam === 'moshe' ? ['#0F3D32', '#2D7A62', '#D4AF37'] : ['#5E1626', '#8C1D36', '#D4AF37']
+    });
+  };
+
+  const handleUpdateProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = modalName.trim();
+    const cleanPhone = modalPhone.replace(/[^\d+]/g, '').trim();
+
+    if (!cleanName) {
+      setModalError(language === 'te' ? 'దయచేసి మీ పేరు నమోదు చేయండి' : 'Please enter your name');
+      return;
+    }
+    if (!cleanPhone || cleanPhone.length < 5) {
+      setModalError(language === 'te' ? 'దయచేసి సరైన ఫోన్ నంబర్ నమోదు చేయండి' : 'Please enter a valid phone number');
+      return;
+    }
+
+    setModalError('');
+    const newProf = { name: cleanName, phone: cleanPhone };
+    setPlayerProfile(newProf);
+    try {
+      localStorage.setItem(STORAGE_PLAYER_PROFILE_KEY, JSON.stringify(newProf));
     } catch {}
     setShowProfileModal(false);
-
-    // If there was a pending score to credit, award it now
-    if (pendingScoreToAdd && pendingScoreToAdd > 0) {
-      awardMarksToPlayer(pendingScoreToAdd, userTeam, newProfile);
-      setPendingScoreToAdd(null);
-    }
   };
 
   const handleSelectTeam = (team: 'moshe' | 'priya') => {
@@ -305,12 +257,192 @@ export const WeddingFunGame: React.FC = () => {
     });
   };
 
+  // ============================================================
+  // UNIFIED MATCH EVENT & POINT TRANSFER LOGGER
+  // ============================================================
+  const logMatchResult = async ({
+    gameName,
+    outcome,
+    pointsWon = 0,
+    pointsLost = 0,
+    pointsTransferredToOpponent = 0,
+    customDesc,
+    customTeluguDesc
+  }: {
+    gameName: string;
+    outcome: 'won' | 'lost' | 'partial';
+    pointsWon?: number;
+    pointsLost?: number;
+    pointsTransferredToOpponent?: number;
+    customDesc?: string;
+    customTeluguDesc?: string;
+  }) => {
+    if (!playerProfile.name || !playerProfile.phone) return;
+
+    const cleanPhone = playerProfile.phone.replace(/[^\d+]/g, '').slice(-15);
+    const playerId = `player_${cleanPhone}`;
+    const opponentTeam = userTeam === 'moshe' ? 'priya' : 'moshe';
+    const teamTitle = userTeam === 'moshe' ? 'Moshe Dora' : 'Nelluri Priya';
+    const opponentTitle = opponentTeam === 'moshe' ? 'Moshe Dora' : 'Nelluri Priya';
+    const teamTitleTe = userTeam === 'moshe' ? 'మోషే దొర' : 'నెల్లూరి ప్రియ';
+    const opponentTitleTe = opponentTeam === 'moshe' ? 'మోషే దొర' : 'నెల్లూరి ప్రియ';
+
+    // Default descriptions if custom not provided
+    let defaultDesc = '';
+    let defaultTeluguDesc = '';
+
+    if (outcome === 'lost' || pointsLost > 0 || pointsTransferredToOpponent > 0) {
+      defaultDesc = `${playerProfile.name} supported Team ${teamTitle} in ${gameName} but failed, so Team ${teamTitle} lost ${pointsLost || pointsTransferredToOpponent} points to Team ${opponentTitle}!`;
+      defaultTeluguDesc = `${playerProfile.name} టీమ్ ${teamTitleTe} తరఫున ${gameName}లో విఫలమయ్యారు, కాబట్టి ${teamTitleTe} ${pointsLost || pointsTransferredToOpponent} పాయింట్లు కోల్పోయి టీమ్ ${opponentTitleTe}కు బదిలీ అయ్యాయి!`;
+    } else {
+      defaultDesc = `${playerProfile.name} achieved a stellar victory in ${gameName}, earning ${pointsWon} points for Team ${teamTitle}!`;
+      defaultTeluguDesc = `${playerProfile.name} ${gameName}లో అద్భుత విజయం సాధించి, టీమ్ ${teamTitleTe}కు ${pointsWon} పాయింట్లను తెచ్చిపెట్టారు!`;
+    }
+
+    const finalDesc = customDesc || defaultDesc;
+    const finalTeluguDesc = customTeluguDesc || defaultTeluguDesc;
+
+    // Trigger visual notification banner
+    setRecentPointFlyout({
+      team: userTeam,
+      pts: pointsWon > 0 ? pointsWon : pointsLost || pointsTransferredToOpponent,
+      playerName: playerProfile.name,
+      isLoss: pointsLost > 0 || pointsTransferredToOpponent > 0,
+      transferredTo: pointsTransferredToOpponent > 0 ? opponentTeam : undefined,
+      msg: finalDesc
+    });
+    setTimeout(() => setRecentPointFlyout(null), 4500);
+
+    // 1. Update Global Team Scores in state & Firestore
+    setTeamScores(prev => {
+      let newMoshe = prev.moshe;
+      let newPriya = prev.priya;
+
+      if (userTeam === 'moshe') {
+        newMoshe = Math.max(0, newMoshe + pointsWon - pointsLost);
+        if (pointsTransferredToOpponent > 0) {
+          newPriya += pointsTransferredToOpponent;
+        }
+      } else {
+        newPriya = Math.max(0, newPriya + pointsWon - pointsLost);
+        if (pointsTransferredToOpponent > 0) {
+          newMoshe += pointsTransferredToOpponent;
+        }
+      }
+
+      const updated = {
+        moshe: newMoshe,
+        priya: newPriya,
+        totalPlays: prev.totalPlays + 1
+      };
+
+      try {
+        localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(updated));
+      } catch {}
+
+      return updated;
+    });
+
+    try {
+      const scoresDocRef = doc(db, 'game_scores', 'global_scores');
+      const scoreUpdates: Record<string, unknown> = {
+        totalPlays: increment(1),
+        lastUpdated: new Date().toISOString()
+      };
+
+      if (pointsWon > 0) {
+        scoreUpdates[userTeam] = increment(pointsWon);
+      }
+      if (pointsLost > 0) {
+        scoreUpdates[userTeam] = increment(-pointsLost);
+      }
+      if (pointsTransferredToOpponent > 0) {
+        scoreUpdates[opponentTeam] = increment(pointsTransferredToOpponent);
+      }
+
+      await setDoc(scoresDocRef, scoreUpdates, { merge: true });
+    } catch (e) {
+      console.warn('Firestore team scores write error:', e);
+    }
+
+    // 2. Update Leaderboard Entry for Player
+    try {
+      const playerDocRef = doc(db, 'game_leaderboard', playerId);
+      await setDoc(
+        playerDocRef,
+        {
+          name: playerProfile.name,
+          phone: playerProfile.phone,
+          score: increment(Math.max(0, pointsWon - pointsLost)),
+          team: userTeam,
+          gamesPlayed: increment(1),
+          lastPlayed: new Date().toISOString()
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Firestore player score write error:', e);
+    }
+
+    // 3. Dual write via Server Leaderboard API
+    try {
+      await fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: playerProfile.name,
+          phone: playerProfile.phone,
+          points: pointsWon,
+          pointsLost,
+          pointsTransferredToOpponent,
+          team: userTeam
+        })
+      });
+    } catch (e) {
+      console.warn('Server leaderboard write fallback:', e);
+    }
+
+    // 4. Save to Match History (Firestore + Server API)
+    const now = new Date();
+    const historyPayload = {
+      playerName: playerProfile.name,
+      playerPhone: playerProfile.phone,
+      team: userTeam,
+      opponentTeam,
+      gameName,
+      outcome,
+      pointsWon,
+      pointsLost,
+      pointsTransferredToOpponent,
+      description: finalDesc,
+      teluguDescription: finalTeluguDesc,
+      timestamp: now.toISOString(),
+      formattedTime: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }),
+      formattedDate: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    };
+
+    try {
+      await addDoc(collection(db, 'game_history'), historyPayload);
+    } catch (e) {
+      console.warn('Firestore game history write fallback:', e);
+    }
+
+    try {
+      await fetch('/api/match-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(historyPayload)
+      });
+    } catch (e) {
+      console.warn('Server match history write fallback:', e);
+    }
+  };
+
   // Percentage calculations for dynamic tug-of-war bar
   const totalPoints = teamScores.moshe + teamScores.priya;
   const moshePercent = totalPoints === 0 ? 50 : Math.round((teamScores.moshe / totalPoints) * 100);
   const priyaPercent = 100 - moshePercent;
 
-  // Mask phone for badge
   const maskPhone = (phone: string) => {
     if (!phone) return '';
     const clean = phone.replace(/[^\d+]/g, '');
@@ -325,6 +457,7 @@ export const WeddingFunGame: React.FC = () => {
   const [gameActive, setGameActive] = useState(false);
   const [gameTimeLeft, setGameTimeLeft] = useState(30);
   const [blessingScore, setBlessingScore] = useState(0);
+  const [chilliesCaught, setChilliesCaught] = useState(0);
   const [combo, setCombo] = useState(0);
   const [highScore, setHighScore] = useState(0);
   const [thaliX, setThaliX] = useState(50);
@@ -333,15 +466,8 @@ export const WeddingFunGame: React.FC = () => {
   const nextItemIdRef = useRef(1);
 
   const startTalambraluGame = () => {
-    // If user hasn't registered name & phone, prompt them nicely
-    if (!playerProfile.name || !playerProfile.phone) {
-      setModalName(playerProfile.name);
-      setModalPhone(playerProfile.phone);
-      setShowProfileModal(true);
-      return;
-    }
-
     setBlessingScore(0);
+    setChilliesCaught(0);
     setCombo(0);
     setGameTimeLeft(30);
     setFallingItems([]);
@@ -379,15 +505,44 @@ export const WeddingFunGame: React.FC = () => {
         if (prev <= 1) {
           clearInterval(timerInterval);
           setGameActive(false);
-          if (blessingScore > 0) {
-            awardMarksToPlayer(blessingScore);
+
+          // Calculate match outcome
+          const teamName = userTeam === 'moshe' ? 'Moshe Dora' : 'Nelluri Priya';
+          const opponentName = userTeam === 'moshe' ? 'Nelluri Priya' : 'Moshe Dora';
+          const teamNameTe = userTeam === 'moshe' ? 'మోషే దొర' : 'నెల్లూరి ప్రియ';
+          const opponentNameTe = userTeam === 'moshe' ? 'నెల్లూరి ప్రియ' : 'మోషే దొర';
+
+          if (blessingScore <= 20 || chilliesCaught >= 3) {
+            // Failed attempt / penalty: points lost and transferred to opponent!
+            const lostPts = 100;
+            logMatchResult({
+              gameName: 'Talambralu Pearl Catch',
+              outcome: 'lost',
+              pointsWon: 0,
+              pointsLost: lostPts,
+              pointsTransferredToOpponent: lostPts,
+              customDesc: `${playerProfile.name} supported Team ${teamName} in Talambralu Pearl Catch but caught ${chilliesCaught} fiery chillies, causing Team ${teamName} to lose ${lostPts} points to Team ${opponentName}!`,
+              customTeluguDesc: `${playerProfile.name} టీమ్ ${teamNameTe} తరఫున తలంబ్రాలు ఆటలో ${chilliesCaught} ఎండుమిరపకాయలు పట్టి విఫలమయ్యారు, కాబట్టి ${teamNameTe} ${lostPts} పాయింట్లు కోల్పోయి టీమ్ ${opponentNameTe}కు బదిలీ అయ్యాయి!`
+            });
+          } else {
+            // Won game!
+            logMatchResult({
+              gameName: 'Talambralu Pearl Catch',
+              outcome: 'won',
+              pointsWon: blessingScore,
+              pointsLost: 0,
+              pointsTransferredToOpponent: 0,
+              customDesc: `${playerProfile.name} scored ${blessingScore} sacred pearl points for Team ${teamName} in Talambralu Catch!`,
+              customTeluguDesc: `${playerProfile.name} తలంబ్రాల ఆటలో టీమ్ ${teamNameTe} కోసం ${blessingScore} పవిత్ర పాయింట్లను సాధించారు!`
+            });
+            confetti({
+              particleCount: 75,
+              spread: 80,
+              origin: { y: 0.6 },
+              colors: ['#0F3D32', '#2D7A62', '#D4AF37', '#FFFDF9', '#E8A5B3']
+            });
           }
-          confetti({
-            particleCount: 75,
-            spread: 80,
-            origin: { y: 0.6 },
-            colors: ['#0F3D32', '#2D7A62', '#D4AF37', '#FFFDF9', '#E8A5B3']
-          });
+
           return 0;
         }
         return prev - 1;
@@ -421,7 +576,7 @@ export const WeddingFunGame: React.FC = () => {
           emoji = '🌟';
           points = 25;
           name = 'Golden Pearl';
-        } else if (rand < 0.92) {
+        } else if (rand < 0.90) {
           itemType = 'ring';
           emoji = '💍';
           points = 50;
@@ -429,7 +584,7 @@ export const WeddingFunGame: React.FC = () => {
         } else {
           itemType = 'chilli';
           emoji = '🌶️';
-          points = -10;
+          points = -15;
           name = 'Fiery Chilli';
         }
 
@@ -456,6 +611,7 @@ export const WeddingFunGame: React.FC = () => {
             playCatchChime(item.type);
             if (item.type === 'chilli') {
               setBlessingScore(s => Math.max(0, s + item.points));
+              setChilliesCaught(c => c + 1);
               setCombo(0);
             } else {
               setBlessingScore(s => {
@@ -482,7 +638,7 @@ export const WeddingFunGame: React.FC = () => {
       clearInterval(timerInterval);
       clearInterval(animInterval);
     };
-  }, [gameActive, thaliX, blessingScore, combo, highScore]);
+  }, [gameActive, thaliX, blessingScore, chilliesCaught, combo, highScore, userTeam, playerProfile]);
 
   const playCatchChime = (type: FallingItem['type']) => {
     try {
@@ -518,8 +674,9 @@ export const WeddingFunGame: React.FC = () => {
   const [varamalaOscillator, setVaramalaOscillator] = useState(50);
   const [varamalaDir, setVaramalaDir] = useState(1);
   const [varamalaTossesLeft, setVaramalaTossesLeft] = useState(5);
-  const [varamalaResult, setVaramalaResult] = useState<{ quality: string; pts: number; msg: string } | null>(null);
+  const [varamalaResult, setVaramalaResult] = useState<{ quality: string; pts: number; msg: string; isMiss?: boolean } | null>(null);
   const [varamalaTotalScore, setVaramalaTotalScore] = useState(0);
+  const [varamalaMisses, setVaramalaMisses] = useState(0);
   const [varamalaActive, setVaramalaActive] = useState(false);
   const [isVaramalaComplete, setIsVaramalaComplete] = useState(false);
 
@@ -544,15 +701,9 @@ export const WeddingFunGame: React.FC = () => {
   }, [varamalaActive, varamalaDir, isVaramalaComplete]);
 
   const handleStartVaramala = () => {
-    if (!playerProfile.name || !playerProfile.phone) {
-      setModalName(playerProfile.name);
-      setModalPhone(playerProfile.phone);
-      setShowProfileModal(true);
-      return;
-    }
-
     setVaramalaTossesLeft(5);
     setVaramalaTotalScore(0);
+    setVaramalaMisses(0);
     setVaramalaResult(null);
     setIsVaramalaComplete(false);
     setVaramalaActive(true);
@@ -562,9 +713,15 @@ export const WeddingFunGame: React.FC = () => {
     if (!varamalaActive || varamalaTossesLeft <= 0) return;
 
     const distFromCenter = Math.abs(varamalaOscillator - 50);
-    let pts = 20;
-    let quality = language === 'te' ? 'శుభమాల!' : 'Nice Toss!';
-    let msg = language === 'te' ? 'సువాసన గల మాల వేదికను అలంకరించింది!' : 'Fragrant jasmine touched the altar.';
+    const teamName = userTeam === 'moshe' ? 'Moshe Dora' : 'Nelluri Priya';
+    const opponentName = userTeam === 'moshe' ? 'Nelluri Priya' : 'Moshe Dora';
+    const teamNameTe = userTeam === 'moshe' ? 'మోషే దొర' : 'నెల్లూరి ప్రియ';
+    const opponentNameTe = userTeam === 'moshe' ? 'నెల్లూరి ప్రియ' : 'మోషే దొర';
+
+    let pts = 0;
+    let quality = '';
+    let msg = '';
+    let isMiss = false;
 
     if (distFromCenter < 7) {
       pts = 100;
@@ -576,22 +733,51 @@ export const WeddingFunGame: React.FC = () => {
         origin: { y: 0.65 },
         colors: ['#0F3D32', '#D4AF37', '#FFF2C4', '#2D7A62']
       });
-    } else if (distFromCenter < 18) {
-      pts = 50;
+    } else if (distFromCenter < 20) {
+      pts = 40;
       quality = language === 'te' ? '🌸 అద్భుతమైన విసిరివేత!' : '🌸 Royal Accuracy!';
       msg = language === 'te' ? 'మాల అందంగా వేదికపై కొలువైంది!' : 'A majestic garland toss onto the holy altar.';
+    } else {
+      // Complete Miss -> Penalty / Points lost to opponent!
+      isMiss = true;
+      pts = 0;
+      quality = language === 'te' ? '❌ గురి తప్పింది!' : '❌ Missed the Altar!';
+      msg = language === 'te' ? 'మాల వేదిక దాటిపోయింది! 30 పాయింట్లు ప్రత్యర్థి టీమ్‌కి బదిలీ అయ్యాయి.' : 'Garland missed the podium! 30 points transferred to rival team.';
+      setVaramalaMisses(m => m + 1);
     }
 
-    awardMarksToPlayer(pts);
     setVaramalaTotalScore(prev => prev + pts);
-    setVaramalaResult({ quality, pts, msg });
+    setVaramalaResult({ quality, pts, msg, isMiss });
+
+    // Single toss log if it's a critical miss or critical bullseye
+    if (isMiss) {
+      logMatchResult({
+        gameName: 'Varamala Garland Toss',
+        outcome: 'lost',
+        pointsWon: 0,
+        pointsLost: 30,
+        pointsTransferredToOpponent: 30,
+        customDesc: `${playerProfile.name} supported Team ${teamName} but missed the garland toss, so Team ${teamName} lost 30 points to Team ${opponentName}!`,
+        customTeluguDesc: `${playerProfile.name} టీమ్ ${teamNameTe} తరఫున వరమాల విసురుతూ గురి తప్పారు, కాబట్టి ${teamNameTe} 30 పాయింట్లు కోల్పోయి టీమ్ ${opponentNameTe}కు బదిలీ అయ్యాయి!`
+      });
+    } else {
+      logMatchResult({
+        gameName: 'Varamala Garland Toss',
+        outcome: 'won',
+        pointsWon: pts,
+        pointsLost: 0,
+        pointsTransferredToOpponent: 0,
+        customDesc: `${playerProfile.name} tossed garland with royal precision (+${pts} pts for Team ${teamName})!`,
+        customTeluguDesc: `${playerProfile.name} వరమాలను దివ్యంగా విసిరి టీమ్ ${teamNameTe}కు +${pts} పాయింట్లను సాధించారు!`
+      });
+    }
 
     setVaramalaTossesLeft(prev => {
       const next = prev - 1;
       if (next <= 0) {
         setIsVaramalaComplete(true);
         confetti({
-          particleCount: 90,
+          particleCount: 80,
           spread: 85,
           origin: { y: 0.55 }
         });
@@ -613,15 +799,13 @@ export const WeddingFunGame: React.FC = () => {
   const handlePickKalasha = (index: number) => {
     if (selectedKalasha !== null || isMatchOver) return;
 
-    if (!playerProfile.name || !playerProfile.phone) {
-      setModalName(playerProfile.name);
-      setModalPhone(playerProfile.phone);
-      setShowProfileModal(true);
-      return;
-    }
-
     setSelectedKalasha(index);
     const isWinner = index === kalashaTarget;
+
+    const teamName = userTeam === 'moshe' ? 'Moshe Dora' : 'Nelluri Priya';
+    const opponentName = userTeam === 'moshe' ? 'Nelluri Priya' : 'Moshe Dora';
+    const teamNameTe = userTeam === 'moshe' ? 'మోషే దొర' : 'నెల్లూరి ప్రియ';
+    const opponentNameTe = userTeam === 'moshe' ? 'నెల్లూరి ప్రియ' : 'మోషే దొర';
 
     if (isWinner) {
       if (userTeam === 'moshe') {
@@ -629,14 +813,23 @@ export const WeddingFunGame: React.FC = () => {
         setRoundOutcome(language === 'te' 
           ? "మోషే దొర పాల కలశంలో బంగారు ఉంగరాన్ని కనిపెట్టారు! (+50 పాయింట్లు టీమ్ మోషే 👑)"
           : "Moshe Dora's swift instinct found the sacred gold ring! (+50 Pts for Team Moshe 👑)");
-        awardMarksToPlayer(50, 'moshe');
       } else {
         setKalashaScores(prev => ({ ...prev, priya: prev.priya + 1 }));
         setRoundOutcome(language === 'te'
           ? "నెల్లూరి ప్రియ రాచరిక నైపుణ్యంతో బంగారు ఉంగరాన్ని తీశారు! (+50 పాయింట్లు టీమ్ ప్రియ 💐)"
           : "Nelluri Priya's royal intuition seized the gold ring! (+50 Pts for Team Priya 💐)");
-        awardMarksToPlayer(50, 'priya');
       }
+
+      logMatchResult({
+        gameName: 'Kalasha Ring Duel',
+        outcome: 'won',
+        pointsWon: 50,
+        pointsLost: 0,
+        pointsTransferredToOpponent: 0,
+        customDesc: `${playerProfile.name} supported Team ${teamName} and found the sacred gold ring in the milk kalasha (+50 pts)!`,
+        customTeluguDesc: `${playerProfile.name} టీమ్ ${teamNameTe} తరఫున పాల కలశంలో బంగారు ఉంగరాన్ని కనిపెట్టి +50 పాయింట్లు సాధించారు!`
+      });
+
       confetti({
         particleCount: 50,
         spread: 60,
@@ -644,19 +837,28 @@ export const WeddingFunGame: React.FC = () => {
         colors: ['#0F3D32', '#D4AF37', '#FFF2C4', '#2D7A62']
       });
     } else {
+      // Picked wrong pot -> Opponent found the ring! Penalty of 50 pts transferred to opponent
       if (userTeam === 'moshe') {
         setKalashaScores(prev => ({ ...prev, priya: prev.priya + 1 }));
         setRoundOutcome(language === 'te'
-          ? "ప్రియ చక్కగా వేరే కలశం నుండి ఉంగరాన్ని కనిపెట్టారు! (+50 పాయింట్లు టీమ్ ప్రియ 🌹)"
-          : "Priya gracefully fished out the ring from the other pot! (+50 Pts for Team Priya 🌹)");
-        awardMarksToPlayer(50, 'priya');
+          ? "ప్రియ చక్కగా వేరే కలశం నుండి ఉంగరాన్ని కనిపెట్టారు! (మోషే 50 పాయింట్లు కోల్పోయి ప్రియకు బదిలీ అయ్యాయి 🌹)"
+          : "Priya gracefully fished out the ring from the other pot! (Moshe lost 50 pts ➔ Priya gained 50 pts 🌹)");
       } else {
         setKalashaScores(prev => ({ ...prev, moshe: prev.moshe + 1 }));
         setRoundOutcome(language === 'te'
-          ? "మోషే దొర సునాయాసంగా ఉంగరాన్ని పట్టుకున్నారు! (+50 పాయింట్లు టీమ్ మోషే 👔)"
-          : "Moshe Dora skillfully discovered the hidden ring! (+50 Pts for Team Moshe 👔)");
-        awardMarksToPlayer(50, 'moshe');
+          ? "మోషే దొర సునాయాసంగా ఉంగరాన్ని పట్టుకున్నారు! (ప్రియ 50 పాయింట్లు కోల్పోయి మోషేకు బదిలీ అయ్యాయి 👔)"
+          : "Moshe Dora skillfully discovered the hidden ring! (Priya lost 50 pts ➔ Moshe gained 50 pts 👔)");
       }
+
+      logMatchResult({
+        gameName: 'Kalasha Ring Duel',
+        outcome: 'lost',
+        pointsWon: 0,
+        pointsLost: 50,
+        pointsTransferredToOpponent: 50,
+        customDesc: `${playerProfile.name} supported Team ${teamName} but picked the empty pot; Team ${opponentName} claimed the sacred ring (+50 pts to ${opponentName}, -50 pts lost by ${teamName})!`,
+        customTeluguDesc: `${playerProfile.name} టీమ్ ${teamNameTe} తరఫున ఆడుతూ ఖాళీ కలశాన్ని ఎంచుకున్నారు; టీమ్ ${opponentNameTe} ఉంగరాన్ని గెలుచుకుంది (+50 పాయింట్లు ${opponentNameTe}కు, -50 పాయింట్లు ${teamNameTe} కోల్పోయారు)!`
+      });
     }
   };
 
@@ -664,9 +866,21 @@ export const WeddingFunGame: React.FC = () => {
     if (roundNumber >= 3) {
       setIsMatchOver(true);
       const winningTeam = kalashaScores.moshe > kalashaScores.priya ? 'moshe' : 'priya';
-      awardMarksToPlayer(100, winningTeam);
+      const winnerTitle = winningTeam === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐';
+      const winnerTitleTe = winningTeam === 'moshe' ? 'మోషే దొర 👔' : 'నెల్లూరి ప్రియ 💐';
+
+      logMatchResult({
+        gameName: 'Kalasha Championship (Best of 3)',
+        outcome: winningTeam === userTeam ? 'won' : 'lost',
+        pointsWon: winningTeam === userTeam ? 100 : 0,
+        pointsLost: winningTeam !== userTeam ? 100 : 0,
+        pointsTransferredToOpponent: winningTeam !== userTeam ? 100 : 0,
+        customDesc: `${playerProfile.name} concluded 3 rounds of Kalasha Ring Duel. Team ${winnerTitle} emerged as the ultimate Champion (+100 Grand Bonus)!`,
+        customTeluguDesc: `${playerProfile.name} కలశ ఉంగరాల పోరును పూర్తి చేశారు. టీమ్ ${winnerTitleTe} గ్రాండ్ చాంపియన్‌గా నిలిచింది (+100 బోనస్)!`
+      });
+
       confetti({
-        particleCount: 80,
+        particleCount: 90,
         spread: 90,
         origin: { y: 0.55 }
       });
@@ -687,768 +901,704 @@ export const WeddingFunGame: React.FC = () => {
     setKalashaTarget(Math.floor(Math.random() * 3));
   };
 
-  const scrollToGame = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   return (
     <section className="relative py-20 px-4 sm:px-6 bg-[#F4F8F5] border-b border-[#0F3D32]/20" id="game">
-      <div className="max-w-4xl mx-auto space-y-14">
+      <div className="max-w-4xl mx-auto space-y-12">
         
         {/* Section Header */}
         <ScrollReveal direction="up" threshold={0.15}>
           <div className="text-center">
             <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/80 px-4 py-1.5 rounded-full border border-[#D4AF37]/50 shadow-xs">
               <Trees className="w-3.5 h-3.5 text-[#2D7A62]" />
-              {language === 'te' ? 'వివాహ వేడుకలు • వరుడు vs వధువు ఛాలెంజ్' : 'Eden Garden Celebrations • Groom vs Bride'}
+              {language === 'te' ? 'వివాహ వేడుకలు • వరుడు vs వధువు ఛాలెంజ్' : 'Eden Garden Celebrations • Groom vs Bride Arena'}
               <Trees className="w-3.5 h-3.5 text-[#2D7A62]" />
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              {language === 'te' ? 'వివాహ సరదా గేమ్స్ & లైవ్ లీడర్‌బోర్డ్' : 'Eden Garden Wedding Games & Leaderboard'}
+              {language === 'te' ? 'వివాహ సరదా గేమ్స్ & లైవ్ అరీనా' : 'Eden Garden Wedding Games Arena'}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/80 italic max-w-xl mx-auto mt-2">
               {language === 'te'
-                ? 'మీ పేరు మరియు ఫోన్ నంబర్‌తో ఆడండి! మీరు ఆడిన ప్రతిసారీ మీ పాత మార్కులకు కొత్త మార్కులు కలుస్తాయి & లీడర్‌బోర్డ్‌లో కనిపిస్తాయి!'
-                : 'Play as yourself with your phone number ID! Every round adds cumulative marks to your profile and ranks you on the live leaderboard!'}
+                ? 'ముందుగా మీ పేరు & ఫోన్ నంబర్‌తో నమోదు చేసుకోండి. అప్పుడు మాత్రమే అన్ని ఆటలు తెరవబడతాయి!'
+                : 'Register with your Name and Phone Number to unlock all interactive wedding games and lead the live scoreboard!'}
             </p>
           </div>
         </ScrollReveal>
 
         {/* ========================================================
-            PLAYER IDENTITY BADGE & PROFILE REGISTRATION BAR
+            CASE 1: REGISTRATION GATE (GAMES LOCKED UNTIL REGISTERED)
            ======================================================== */}
-        <ScrollReveal direction="up" delay={40} threshold={0.15}>
-          <div className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-[#D4AF37]/70 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="w-10 h-10 rounded-full bg-[#0F3D32]/10 border border-[#0F3D32]/30 flex items-center justify-center text-[#0F3D32] shrink-0">
-                <User className="w-5 h-5" />
+        {!isRegistered ? (
+          <ScrollReveal direction="up" delay={50} threshold={0.15}>
+            <div className="bg-white rounded-3xl border-2 border-[#D4AF37] p-6 sm:p-10 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37]/10 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="max-w-xl mx-auto space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-2xl bg-[#0F3D32] text-[#F1DFA6] border-2 border-[#D4AF37] flex items-center justify-center mx-auto shadow-lg">
+                    <Lock className="w-7 h-7" />
+                  </div>
+                  <h3 className="font-decorative text-2xl sm:text-3xl font-bold text-[#0F3D32]">
+                    {language === 'te' ? 'ఆటలలో ప్రవేశించడానికి రిజిస్ట్రేషన్ చేసుకోండి' : 'Register to Unlock Wedding Games'}
+                  </h3>
+                  <p className="font-cormorant text-base sm:text-lg text-gray-600 italic">
+                    {language === 'te'
+                      ? 'దయచేసి మీ పేరు, ఫోన్ నంబర్ మరియు మీరు సపోర్ట్ చేయాలనుకుంటున్న టీమ్‌ను ఎంచుకోండి. అప్పుడు గేమ్స్ ఓపెన్ అవుతాయి!'
+                      : 'Please enter your Name, Phone Number, and select your Team (Moshe Dora 👔 or Nelluri Priya 💐) to enter the Wedding Battle Arena.'}
+                  </p>
+                </div>
+
+                {regError && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-cinzel font-bold text-center">
+                    {regError}
+                  </div>
+                )}
+
+                <form onSubmit={handleInitialRegistration} className="space-y-5">
+                  {/* Name Input */}
+                  <div>
+                    <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-[#0F3D32] mb-1.5">
+                      {language === 'te' ? 'మీ పూర్తి పేరు (Full Name) *' : 'Your Full Name *'}
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-[#D4AF37] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        placeholder={language === 'te' ? 'ఉదా: తేజ / రవి / ప్రియాంక' : 'e.g. Teja / Ravi / Priyanka'}
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-[#F4F8F5] border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32] focus:ring-1 focus:ring-[#0F3D32]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Phone Input */}
+                  <div>
+                    <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-[#0F3D32] mb-1.5">
+                      {language === 'te' ? 'ఫోన్ నంబర్ (ప్లేయర్ ఐడీగా ఉపయోగపడుతుంది) *' : 'Phone Number (Used as Player ID) *'}
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-[#D4AF37] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="tel"
+                        required
+                        placeholder={language === 'te' ? 'ఉదా: 9876543210' : 'e.g. 9876543210'}
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-[#F4F8F5] border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32] focus:ring-1 focus:ring-[#0F3D32]"
+                      />
+                    </div>
+                    <span className="text-[11px] font-cormorant text-gray-500 italic mt-1 block">
+                      {language === 'te' ? 'మీ ఫోన్ నంబర్ ద్వారా మీరు ఆడిన ప్రతిసారీ మార్కులు లీడర్‌బోర్డ్‌లో కలుస్తాయి.' : 'Your points will accumulate under this phone ID across all 3 wedding games.'}
+                    </span>
+                  </div>
+
+                  {/* Team Selection */}
+                  <div>
+                    <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-[#0F3D32] mb-2">
+                      {language === 'te' ? 'మీరు ఎవరికి సపోర్ట్ చేస్తున్నారు? (Choose Team) *' : 'Which Team Are You Supporting? *'}
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setRegTeam('moshe')}
+                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer text-left ${
+                          regTeam === 'moshe'
+                            ? 'border-[#0F3D32] bg-[#0F3D32]/10 ring-2 ring-[#0F3D32]/30 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-[#0F3D32]/50'
+                        }`}
+                      >
+                        <div className="text-2xl mb-1">👔</div>
+                        <div className="font-cinzel text-xs sm:text-sm font-bold text-[#0F3D32]">
+                          Team Moshe Dora
+                        </div>
+                        <div className="text-[11px] font-cormorant text-gray-500 italic">
+                          {language === 'te' ? 'వరుడి బృందం' : 'Royal Groom'}
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setRegTeam('priya')}
+                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer text-left ${
+                          regTeam === 'priya'
+                            ? 'border-[#5E1626] bg-[#5E1626]/10 ring-2 ring-[#5E1626]/30 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-[#5E1626]/50'
+                        }`}
+                      >
+                        <div className="text-2xl mb-1">💐</div>
+                        <div className="font-cinzel text-xs sm:text-sm font-bold text-[#5E1626]">
+                          Team Nelluri Priya
+                        </div>
+                        <div className="text-[11px] font-cormorant text-gray-500 italic">
+                          {language === 'te' ? 'వధువు బృందం' : 'Radiant Bride'}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 px-6 rounded-2xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-sm font-bold uppercase tracking-wider transition-all shadow-lg hover:shadow-xl cursor-pointer flex items-center justify-center gap-2 border border-[#D4AF37]"
+                  >
+                    <span>{language === 'te' ? 'గేమ్స్ ఓపెన్ చేయండి & ప్రవేశించండి' : 'Unlock Wedding Games & Enter Battle'}</span>
+                    <ArrowRight className="w-4 h-4 text-[#D4AF37]" />
+                  </button>
+                </form>
               </div>
-              <div>
-                {playerProfile.name && playerProfile.phone ? (
+            </div>
+          </ScrollReveal>
+        ) : (
+          /* ========================================================
+              CASE 2: UNLOCKED ARENA (REGISTRATION COMPLETED)
+             ======================================================== */
+          <>
+            {/* Active Player Status Badge */}
+            <ScrollReveal direction="up" delay={40} threshold={0.15}>
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-[#D4AF37]/70 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="w-11 h-11 rounded-full bg-[#0F3D32]/10 border border-[#0F3D32]/30 flex items-center justify-center text-[#0F3D32] shrink-0">
+                    <UserCheck className="w-6 h-6 text-[#0F3D32]" />
+                  </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-cinzel text-xs text-gray-500 font-semibold uppercase">
-                        {language === 'te' ? 'ప్లేయర్ ఐడీ:' : 'Player ID:'}
+                        {language === 'te' ? 'ప్లేయర్:' : 'Active Player:'}
                       </span>
-                      <strong className="font-cinzel text-sm sm:text-base text-[#0F3D32] font-bold">
+                      <strong className="font-cinzel text-base text-[#0F3D32] font-bold">
                         {playerProfile.name}
                       </strong>
                       <span className="text-xs font-cinzel text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
                         {maskPhone(playerProfile.phone)}
                       </span>
+                      <span className={`text-[10px] font-cinzel font-bold px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${
+                        userTeam === 'priya' ? 'bg-[#5E1626]/10 text-[#5E1626]' : 'bg-[#0F3D32]/10 text-[#0F3D32]'
+                      }`}>
+                        <span>{userTeam === 'priya' ? '💐 Team Priya' : '👔 Team Moshe'}</span>
+                      </span>
                     </div>
-                    <div className="font-cormorant text-xs text-gray-600 italic mt-0.5">
-                      {language === 'te' ? 'మీ మొత్తం స్కోర్:' : 'Your Total Cumulative Marks:'}{' '}
-                      <strong className="text-[#0F3D32] font-cinzel font-bold">{playerCumulativeMarks.toLocaleString()} pts</strong>{' '}
-                      &bull; {language === 'te' ? 'సపోర్ట్:' : 'Supporting:'}{' '}
-                      <span className="font-bold text-[#0F3D32]">{userTeam === 'moshe' ? 'Team Moshe 👔' : 'Team Priya 💐'}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="font-cinzel text-sm font-bold text-[#0F3D32]">
-                      {language === 'te' ? 'మీ పేరు & ఫోన్ నంబర్ నమోదు చేయండి' : 'Join the Live Wedding Leaderboard'}
-                    </div>
-                    <div className="font-cormorant text-xs text-gray-600 italic">
-                      {language === 'te' 
-                        ? 'గేమ్స్ ఆడటానికి మరియు మీ మార్కులను లీడర్‌బోర్డ్‌లో భద్రపరచడానికి మీ ఐడీని నమోదు చేయండి.'
-                        : 'Enter your name and phone number as your ID so your points accumulate across games!'}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalName(playerProfile.name);
-                  setModalPhone(playerProfile.phone);
-                  setProfileError('');
-                  setShowProfileModal(true);
-                }}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#0F3D32] text-[#F1DFA6] hover:bg-[#2D7A62] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>
-                  {playerProfile.name && playerProfile.phone
-                    ? (language === 'te' ? 'ఐడీ మార్చండి' : 'Edit / Switch ID')
-                    : (language === 'te' ? 'పేరు నమోదు చేయండి 📝' : 'Register Player ID 📝')}
-                </span>
-              </button>
-            </div>
-          </div>
-        </ScrollReveal>
-
-        {/* ========================================================
-            GRAND WEDDING BATTLE SCOREBOARD
-           ======================================================== */}
-        <ScrollReveal direction="up" delay={60} threshold={0.15}>
-          <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FFFDF9] via-[#F2F7F4] to-[#FFFDF9] border-2 border-[#D4AF37] shadow-lg relative overflow-hidden">
-            
-            {/* Top Battle Header */}
-            <div className="flex flex-wrap items-center justify-between border-b border-[#0F3D32]/20 pb-3 mb-4 gap-2">
-              <div className="flex items-center gap-2">
-                <Crown className="w-4 h-4 text-[#D4AF37]" />
-                <span className="font-cinzel text-xs sm:text-sm font-bold uppercase tracking-wider text-[#0F3D32]">
-                  {language === 'te' ? 'వరుడు vs వధువు లైవ్ స్కోర్‌బోర్డ్' : 'Eden Garden Championship Battle'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="font-cinzel text-[11px] text-gray-500 font-semibold">
-                  {language === 'te' ? 'మొత్తం ఆటలు:' : 'Total Real Plays:'} <strong className="text-[#0F3D32]">{teamScores.totalPlays}</strong>
-                </span>
-              </div>
-            </div>
-
-            {/* Team Selectors & Scores */}
-            <div className="grid grid-cols-2 gap-3 sm:gap-6 mb-5">
-              {/* Team Moshe Button */}
-              <button
-                type="button"
-                onClick={() => handleSelectTeam('moshe')}
-                className={`p-3.5 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer text-left relative group ${
-                  userTeam === 'moshe'
-                    ? 'border-[#0F3D32] bg-[#0F3D32]/10 ring-2 ring-[#0F3D32]/30 shadow-md scale-[1.02]'
-                    : 'border-[#D4AF37]/40 bg-white hover:border-[#0F3D32] hover:bg-[#F2F7F4]'
-                }`}
-              >
-                {userTeam === 'moshe' && (
-                  <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#0F3D32] bg-[#0F3D32]/15 px-2 py-0.5 rounded-full uppercase">
-                    <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
-                  </span>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl sm:text-3xl">👔</span>
-                  <div>
-                    <div className="font-cinzel text-xs sm:text-sm font-bold text-[#0F3D32] uppercase">
-                      {language === 'te' ? 'టీమ్ మోషే దొర' : 'Team Moshe Dora'}
-                    </div>
-                    <div className="font-cormorant text-xs text-gray-600 italic">
-                      {language === 'te' ? 'వరుడు' : 'The Royal Groom'}
+                    <div className="font-cormorant text-xs sm:text-sm text-gray-600 italic mt-0.5">
+                      {language === 'te' ? 'మీ మొత్తం సంచిత స్కోర్:' : 'Your Total Cumulative Marks:'}{' '}
+                      <strong className="text-[#0F3D32] font-cinzel font-bold">{playerCumulativeMarks.toLocaleString()} pts</strong>
                     </div>
                   </div>
                 </div>
-                <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#0F3D32] mt-2">
-                  {teamScores.moshe.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
-                </div>
-              </button>
 
-              {/* Team Priya Button */}
-              <button
-                type="button"
-                onClick={() => handleSelectTeam('priya')}
-                className={`p-3.5 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer text-left relative group ${
-                  userTeam === 'priya'
-                    ? 'border-[#5E1626] bg-[#5E1626]/10 ring-2 ring-[#5E1626]/30 shadow-md scale-[1.02]'
-                    : 'border-[#D4AF37]/40 bg-white hover:border-[#5E1626] hover:bg-[#F2F7F4]'
-                }`}
-              >
-                {userTeam === 'priya' && (
-                  <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#5E1626] bg-[#5E1626]/15 px-2 py-0.5 rounded-full uppercase">
-                    <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
-                  </span>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl sm:text-3xl">💐</span>
-                  <div>
-                    <div className="font-cinzel text-xs sm:text-sm font-bold text-[#5E1626] uppercase">
-                      {language === 'te' ? 'టీమ్ నెల్లూరి ప్రియ' : 'Team Nelluri Priya'}
-                    </div>
-                    <div className="font-cormorant text-xs text-gray-600 italic">
-                      {language === 'te' ? 'వధువు' : 'The Radiant Bride'}
-                    </div>
-                  </div>
-                </div>
-                <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#5E1626] mt-2">
-                  {teamScores.priya.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
-                </div>
-              </button>
-            </div>
-
-            {/* Tug-of-War Progress Bar */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-cinzel font-bold">
-                <span className="text-[#0F3D32]">Moshe: {moshePercent}%</span>
-                <span className="text-gray-400 font-cormorant italic">{language === 'te' ? 'పాయింట్లు జోడించడానికి టీమ్‌ని ఎంచుకోండి' : 'Select a team to contribute your game points'}</span>
-                <span className="text-[#5E1626]">Priya: {priyaPercent}%</span>
-              </div>
-              <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden flex border border-[#0F3D32]/30 shadow-inner">
-                <div 
-                  className="bg-gradient-to-r from-[#0F3D32] to-[#2D7A62] h-full transition-all duration-700 ease-out"
-                  style={{ width: `${moshePercent}%` }}
-                />
-                <div 
-                  className="bg-gradient-to-r from-[#8C1D36] to-[#5E1626] h-full transition-all duration-700 ease-out"
-                  style={{ width: `${priyaPercent}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Point Flyout Notification */}
-            {recentPointFlyout && (
-              <div className="mt-3 text-center animate-bounce">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs font-bold shadow-md border border-[#D4AF37]">
-                  <Zap className="w-3.5 h-3.5 fill-current text-[#D4AF37]" />
-                  <span>
-                    +{recentPointFlyout.pts} {language === 'te' ? 'పాయింట్లు జోడించబడ్డాయి:' : 'Marks Added to'} {recentPointFlyout.playerName ? `${recentPointFlyout.playerName} & ` : ''}Team {recentPointFlyout.team === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐'}!
-                  </span>
-                </span>
-              </div>
-            )}
-
-            {/* Quick Jumps to Games & Leaderboard */}
-            <div className="mt-4 pt-3 border-t border-[#D4AF37]/30 flex flex-wrap items-center justify-center gap-2 text-xs font-cinzel">
-              <span className="text-gray-500 font-semibold">{language === 'te' ? 'త్వరిత నావిగేషన్:' : 'Jump to:'}</span>
-              <button
-                type="button"
-                onClick={() => scrollToGame('game-talambralu')}
-                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
-              >
-                🌸 1. {language === 'te' ? 'తలంబ్రాల క్యాచ్' : 'Talambralu Catch'}
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollToGame('game-varamala')}
-                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
-              >
-                💐 2. {language === 'te' ? 'వరమాల విసిరే ఛాలెంజ్' : 'Varamala Toss'}
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollToGame('game-kalasha')}
-                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
-              >
-                🏺 3. {language === 'te' ? 'కలశం ఉంగరం ఆట' : 'Kalasha Ring Quest'}
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollToGame('leaderboard')}
-                className="px-3.5 py-1 rounded-full bg-[#0F3D32] text-[#F1DFA6] border border-[#D4AF37] hover:scale-105 transition-all cursor-pointer font-bold shadow-xs flex items-center gap-1"
-              >
-                <Trophy className="w-3 h-3 text-[#D4AF37]" />
-                <span>{language === 'te' ? 'లీడర్‌బోర్డ్ 🏆' : 'Leaderboard 🏆'}</span>
-              </button>
-            </div>
-
-          </div>
-        </ScrollReveal>
-
-        {/* ========================================================
-            GAME 1: TALAMBRALU BLESSING CATCHER
-           ======================================================== */}
-        <div id="game-talambralu" className="scroll-mt-24">
-          <ScrollReveal direction="up" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-4 sm:p-8 shadow-xl relative overflow-hidden">
-              
-              {/* Badge & Game Title Header */}
-              <div className="flex flex-wrap items-center justify-between border-b border-[#0F3D32]/20 pb-4 mb-4 gap-2">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
-                    <span>🎮 {language === 'te' ? 'ఆట 01' : 'Game 01'}</span>
-                  </div>
-                  <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
-                    🌸 {language === 'te' ? 'తలంబ్రాల ముత్యాల క్యాచ్' : 'Talambralu Sacred Pearl Catch'}
-                  </h3>
-                  <p className="font-cormorant text-sm sm:text-base text-[#2A2A2A]/80 italic">
-                    {language === 'te'
-                      ? 'బంగారు తాంబూల తట్టను నడిపిస్తూ కురుస్తున్న పవిత్ర ముత్యాలు (🌟), మల్లెలు (🌸), గులాబీలు (🌹) & ఉంగరాలు (💍) పట్టుకోండి!'
-                      : 'Glide the royal thali plate to catch falling pearls (🌟), jasmines (🌸), roses (🌹) & rings (💍)! Avoid chillies (🌶️).'}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F3D32]/10 text-[#0F3D32] font-cinzel text-xs font-bold uppercase">
-                    <Trophy className="w-3.5 h-3.5 text-[#D4AF37]" />
-                    <span>{language === 'te' ? 'పాయింట్లు:' : 'Score:'} {blessingScore}</span>
-                  </div>
-
-                  {combo > 2 && (
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs font-bold animate-bounce border border-[#D4AF37]">
-                      <Flame className="w-3.5 h-3.5 text-[#D4AF37]" />
-                      <span>{combo}x Combo!</span>
-                    </div>
-                  )}
-
-                  <div className={`px-3 py-1 rounded-full font-cinzel text-xs font-bold ${
-                    gameTimeLeft <= 5 ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-[#0F3D32]/10 text-[#0F3D32]'
-                  }`}>
-                    ⏱️ {gameTimeLeft}s
-                  </div>
-                </div>
-              </div>
-
-              {/* Game Interactive Board */}
-              <div
-                ref={gameAreaRef}
-                onPointerMove={handlePointerMove}
-                className="relative w-full h-80 sm:h-96 rounded-2xl bg-radial from-[#F9FBF8] via-[#EFF6F1] to-[#E3EDE6] border-2 border-[#0F3D32]/40 overflow-hidden select-none touch-none shadow-inner cursor-crosshair"
-              >
-                {/* Background Decor */}
-                <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#0F3D32_1px,transparent_1px)] [background-size:20px_20px]" />
-                <div className="absolute top-2 left-0 right-0 text-center pointer-events-none">
-                  <span className="font-cormorant italic text-xs text-[#0F3D32]/60 uppercase tracking-widest">
-                    {language === 'te' ? 'మౌస్ లేదా టచ్ ద్వారా తట్టను కదపండి' : 'Move cursor or swipe touch to glide the sacred thali'}
-                  </span>
-                </div>
-
-                {/* Falling Objects */}
-                {gameActive && fallingItems.map(item => (
-                  <div
-                    key={item.id}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-transform duration-100 text-2xl sm:text-3xl filter drop-shadow-md"
-                    style={{
-                      left: `${item.x}%`,
-                      top: `${item.y}%`
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalName(playerProfile.name);
+                      setModalPhone(playerProfile.phone);
+                      setModalError('');
+                      setShowProfileModal(true);
                     }}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#0F3D32] text-[#F1DFA6] hover:bg-[#2D7A62] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    {item.emoji}
-                  </div>
-                ))}
+                    <Edit3 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>{language === 'te' ? 'ఐడీ మార్చండి' : 'Switch / Edit Player'}</span>
+                  </button>
+                </div>
+              </div>
+            </ScrollReveal>
 
-                {/* The Golden Thali (Player Paddle) */}
-                <div
-                  className="absolute bottom-4 -translate-x-1/2 transition-all duration-75 pointer-events-none z-20 flex flex-col items-center"
-                  style={{ left: `${thaliX}%` }}
-                >
-                  <div className="w-24 sm:w-28 h-7 sm:h-8 rounded-full bg-gradient-to-b from-[#FFF2C4] via-[#D4AF37] to-[#8C6212] border-2 border-[#FFFDF9] shadow-[0_6px_16px_rgba(0,0,0,0.35)] flex items-center justify-center relative">
-                    <div className="absolute inset-1 rounded-full border border-dashed border-[#0F3D32]/40" />
-                    <span className="font-cinzel text-[9px] font-bold text-[#061C16] uppercase tracking-wider">
-                      ✨ {language === 'te' ? 'తాంబూలం' : 'Thali'}
+            {/* GRAND WEDDING BATTLE SCOREBOARD */}
+            <ScrollReveal direction="up" delay={60} threshold={0.15}>
+              <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FFFDF9] via-[#F2F7F4] to-[#FFFDF9] border-2 border-[#D4AF37] shadow-lg relative overflow-hidden">
+                
+                {/* Top Battle Header */}
+                <div className="flex flex-wrap items-center justify-between border-b border-[#0F3D32]/20 pb-3 mb-4 gap-2">
+                  <div className="flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-[#D4AF37]" />
+                    <span className="font-cinzel text-xs sm:text-sm font-bold uppercase tracking-wider text-[#0F3D32]">
+                      {language === 'te' ? 'వరుడు vs వధువు లైవ్ స్కోర్‌బోర్డ్' : 'Eden Garden Live Tug-Of-War Championship'}
                     </span>
                   </div>
-                  <div className="w-12 h-2 bg-black/20 rounded-full blur-[2px] mt-0.5" />
+
+                  <div className="flex items-center gap-2">
+                    <span className="font-cinzel text-[11px] text-gray-500 font-semibold">
+                      {language === 'te' ? 'మొత్తం రౌండ్లు:' : 'Total Match Rounds:'} <strong className="text-[#0F3D32]">{teamScores.totalPlays}</strong>
+                    </span>
+                  </div>
                 </div>
 
-                {/* Overlay when game is idle / game over */}
-                {!gameActive && (
-                  <div className="absolute inset-0 bg-[#061C16]/65 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center z-30">
-                    {blessingScore > 0 ? (
-                      <div className="space-y-3 animate-fadeIn">
-                        <div className="text-4xl">🎊</div>
-                        <h4 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
-                          {language === 'te' ? 'తలంబ్రాల ఆట పూర్తయింది!' : 'Eden Blessing Shower Complete!'}
-                        </h4>
-                        <p className="font-cinzel text-base text-[#F1DFA6] font-bold">
-                          +{blessingScore} {language === 'te' ? 'మార్కులు మీ ప్రొఫైల్‌కు చేర్చబడ్డాయి!' : 'Marks Added To Your Profile & Team!'}
-                        </p>
-                        <p className="font-cormorant text-sm text-[#FFFDF9]/90 italic max-w-sm">
-                          {language === 'te' 
-                            ? 'మీ మార్కులు లైవ్ లీడర్‌బోర్డ్‌లో అప్‌డేట్ అయ్యాయి. కింద స్క్రోల్ చేసి ర్యాంకింగ్స్ చూడండి!' 
-                            : 'Your cumulative score has been added to the live leaderboard below!'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="text-4xl animate-bounce">🌸</div>
-                        <h4 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
-                          {language === 'te' ? 'తలంబ్రాల ముత్యాల క్యాచ్' : 'Talambralu Blessing Catcher'}
-                        </h4>
-                        <p className="font-cormorant text-sm sm:text-base text-[#F1DFA6] italic max-w-md">
-                          {language === 'te' 
-                            ? '30 సెకన్ల వ్యవధిలో పడే ముత్యాలు, మల్లెలు మరియు ఉంగరాలను పట్టుకుని పాయింట్లు సంపాదించండి.'
-                            : 'Catch falling golden pearls, jasmines, roses and sacred rings to score high for your team!'}
-                        </p>
-                      </div>
+                {/* Team Selectors & Scores */}
+                <div className="grid grid-cols-2 gap-3 sm:gap-6 mb-5">
+                  {/* Team Moshe Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTeam('moshe')}
+                    className={`p-3.5 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer text-left relative group ${
+                      userTeam === 'moshe'
+                        ? 'border-[#0F3D32] bg-[#0F3D32]/10 ring-2 ring-[#0F3D32]/30 shadow-md scale-[1.02]'
+                        : 'border-[#D4AF37]/40 bg-white hover:border-[#0F3D32] hover:bg-[#F2F7F4]'
+                    }`}
+                  >
+                    {userTeam === 'moshe' && (
+                      <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#0F3D32] bg-[#0F3D32]/15 px-2 py-0.5 rounded-full uppercase">
+                        <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
+                      </span>
                     )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl sm:text-3xl">👔</span>
+                      <div>
+                        <div className="font-cinzel text-xs sm:text-sm font-bold text-[#0F3D32] uppercase">
+                          {language === 'te' ? 'టీమ్ మోషే దొర' : 'Team Moshe Dora'}
+                        </div>
+                        <div className="font-cormorant text-xs text-gray-600 italic">
+                          {language === 'te' ? 'వరుడు' : 'The Royal Groom'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#0F3D32] mt-2">
+                      {teamScores.moshe.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
+                    </div>
+                  </button>
 
+                  {/* Team Priya Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTeam('priya')}
+                    className={`p-3.5 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer text-left relative group ${
+                      userTeam === 'priya'
+                        ? 'border-[#5E1626] bg-[#5E1626]/10 ring-2 ring-[#5E1626]/30 shadow-md scale-[1.02]'
+                        : 'border-[#D4AF37]/40 bg-white hover:border-[#5E1626] hover:bg-[#F2F7F4]'
+                    }`}
+                  >
+                    {userTeam === 'priya' && (
+                      <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#5E1626] bg-[#5E1626]/15 px-2 py-0.5 rounded-full uppercase">
+                        <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl sm:text-3xl">💐</span>
+                      <div>
+                        <div className="font-cinzel text-xs sm:text-sm font-bold text-[#5E1626] uppercase">
+                          {language === 'te' ? 'టీమ్ నెల్లూరి ప్రియ' : 'Team Nelluri Priya'}
+                        </div>
+                        <div className="font-cormorant text-xs text-gray-600 italic">
+                          {language === 'te' ? 'వధువు' : 'The Radiant Bride'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#5E1626] mt-2">
+                      {teamScores.priya.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Tug-of-War Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-cinzel font-bold">
+                    <span className="text-[#0F3D32]">Moshe: {moshePercent}%</span>
+                    <span className="text-gray-400 font-cormorant italic">
+                      {language === 'te' ? 'మీరు గెలిస్తే మీ టీమ్‌కి పాయింట్లు, ఓడితే ప్రత్యర్థి టీమ్‌కి పాయింట్లు వెళ్తాయి!' : 'Win points for your team or lose them to your rival upon failure!'}
+                    </span>
+                    <span className="text-[#5E1626]">Priya: {priyaPercent}%</span>
+                  </div>
+                  <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden flex border border-[#0F3D32]/30 shadow-inner">
+                    <div 
+                      className="bg-gradient-to-r from-[#0F3D32] to-[#2D7A62] h-full transition-all duration-700 ease-out"
+                      style={{ width: `${moshePercent}%` }}
+                    />
+                    <div 
+                      className="bg-gradient-to-r from-[#8C1D36] to-[#5E1626] h-full transition-all duration-700 ease-out"
+                      style={{ width: `${priyaPercent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Live Flyout Notification */}
+                {recentPointFlyout && (
+                  <div className="mt-3.5 text-center animate-bounce">
+                    <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full font-cinzel text-xs font-bold shadow-md border ${
+                      recentPointFlyout.isLoss
+                        ? 'bg-amber-800 text-white border-amber-400'
+                        : 'bg-[#0F3D32] text-[#F1DFA6] border-[#D4AF37]'
+                    }`}>
+                      {recentPointFlyout.isLoss ? (
+                        <ArrowRightLeft className="w-3.5 h-3.5 text-amber-300" />
+                      ) : (
+                        <Zap className="w-3.5 h-3.5 fill-current text-[#D4AF37]" />
+                      )}
+                      <span>{recentPointFlyout.msg}</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </ScrollReveal>
+
+            {/* ========================================================
+                3 PLAYABLE INTERACTIVE WEDDING GAMES
+               ======================================================== */}
+            
+            {/* GAME 1: TALAMBRALU PEARL CATCH */}
+            <ScrollReveal direction="up" threshold={0.15}>
+              <div className="bg-white rounded-3xl border-2 border-[#D4AF37] p-5 sm:p-7 shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 pb-3 gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-[#0F3D32]/10 flex items-center justify-center text-lg">
+                      ✨
+                    </div>
+                    <div>
+                      <h4 className="font-decorative text-xl sm:text-2xl font-bold text-[#0F3D32]">
+                        {language === 'te' ? 'ఆట 1: తలంబ్రాల ముత్యాల వేట' : 'Game 1: Talambralu Pearl Catch'}
+                      </h4>
+                      <span className="font-cormorant text-xs text-gray-500 italic">
+                        {language === 'te' ? 'పవిత్ర ముత్యాలు, పువ్వులు మరియు ఉంగరాలను ఒడిసిపట్టండి. ఎండుమిర్చి తగిలితే పాయింట్లు పోతాయి!' : 'Catch roses, pearls & gold rings. Avoid fiery chillies or lose points to rival!'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="font-cinzel text-xs font-bold text-gray-500">
+                      {language === 'te' ? 'హై స్కోర్:' : 'Best:'} <strong className="text-[#0F3D32]">{highScore} pts</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {!gameActive ? (
+                  <div className="py-8 px-4 text-center rounded-2xl bg-[#F4F8F5] border border-dashed border-[#0F3D32]/30 space-y-3">
+                    <div className="text-4xl animate-bounce">🍚✨</div>
+                    <h5 className="font-cinzel text-sm font-bold text-[#0F3D32] uppercase">
+                      {language === 'te' ? 'తలంబ్రాల ఛాలెంజ్ ప్రారంభించండి' : 'Start 30-Second Talambralu Catch'}
+                    </h5>
+                    <p className="font-cormorant text-xs sm:text-sm text-gray-600 italic max-w-md mx-auto">
+                      {language === 'te'
+                        ? '30 సెకన్లలో మీరు సాధించిన ప్రతి పాయింట్ మీ టీమ్‌కు చేరుతుంది. ఎండుమిరపకాయలు పడితే ప్రత్యర్థికి పాయింట్లు వెళ్తాయి!'
+                        : 'Move your golden plate left and right to catch blessings! Fiery chillies transfer points to the rival team!'}
+                    </p>
                     <button
                       type="button"
                       onClick={startTalambraluGame}
-                      className="mt-5 px-8 py-3 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 text-[#FFF2C4] font-cinzel text-xs sm:text-sm font-bold uppercase tracking-[0.2em] border-2 border-[#D4AF37] shadow-xl flex items-center gap-2 cursor-pointer transition-all"
+                      className="px-6 py-2.5 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
                     >
                       <Play className="w-4 h-4 fill-current text-[#D4AF37]" />
-                      <span>{blessingScore > 0 ? (language === 'te' ? "మళ్లీ ఆడండి (30s)" : "Play Again (30s)") : (language === 'te' ? "ఆట ప్రారంభించండి" : "Start Pearl Catch Game")}</span>
+                      <span>{language === 'te' ? 'ఆట ప్రారంభించండి' : 'Play Talambralu Catch'}</span>
                     </button>
                   </div>
-                )}
-              </div>
-
-              {/* Mobile touch helper buttons */}
-              {gameActive && (
-                <div className="flex sm:hidden items-center justify-between mt-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setThaliX(prev => Math.max(10, prev - 15))}
-                    className="flex-1 py-2 rounded-xl bg-[#0F3D32]/15 text-[#0F3D32] font-cinzel text-xs font-bold uppercase"
-                  >
-                    ⬅️ {language === 'te' ? 'ఎడమ' : 'Left'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setThaliX(prev => Math.min(90, prev + 15))}
-                    className="flex-1 py-2 rounded-xl bg-[#0F3D32]/15 text-[#0F3D32] font-cinzel text-xs font-bold uppercase"
-                  >
-                    {language === 'te' ? 'కుడి' : 'Right'} ➡️
-                  </button>
-                </div>
-              )}
-            </div>
-          </ScrollReveal>
-        </div>
-
-        {/* ========================================================
-            GAME 2: VARAMALA SACRED GARLAND TOSS
-           ======================================================== */}
-        <div id="game-varamala" className="scroll-mt-24">
-          <ScrollReveal direction="up" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-xl text-center">
-              
-              <div className="max-w-xl mx-auto mb-6">
-                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
-                  <span>🎯 {language === 'te' ? 'ఆట 02' : 'Game 02'}</span>
-                </div>
-                <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
-                  💐 {language === 'te' ? 'వరమాల విసిరే ఛాలెంజ్' : 'Sacred Garland Toss Challenge'}
-                </h3>
-                <p className="font-cormorant text-base text-[#2A2A2A]/80 italic mt-1">
-                  {language === 'te'
-                    ? 'సువాసన గల మల్లెలు మరియు గులాబీల మాలను సరైన సమయంలో వేదికపైకి విసరండి! బంగారు కేంద్రంలో పడితే 100 పాయింట్లు లభిస్తాయి!'
-                    : 'Time your toss to land the fragrant jasmine & rose garland onto the ceremonial altar! Hit the golden center for 100 points!'}
-                </p>
-              </div>
-
-              {/* Garland Toss Stage */}
-              <div className="p-6 rounded-3xl bg-gradient-to-b from-[#F9FBF8] to-[#EFF6F1] border-2 border-[#0F3D32]/40 max-w-xl mx-auto mb-6 shadow-inner relative overflow-hidden">
-                
-                {/* Arch Target in Center */}
-                <div className="relative h-44 flex flex-col items-center justify-between py-2">
-                  <div className="relative">
-                    <div className="w-32 sm:w-40 h-20 rounded-t-full border-4 border-[#D4AF37] bg-[#0F3D32]/5 flex items-center justify-center relative shadow-sm">
-                      <div className="text-3xl">🌿</div>
-                      <span className="absolute -top-3 left-1 text-base">🌸</span>
-                      <span className="absolute -top-4 text-base">🌹</span>
-                      <span className="absolute -top-3 right-1 text-base">🌸</span>
-                    </div>
-                    <div className="text-[10px] font-cinzel font-bold text-[#0F3D32] uppercase mt-1">
-                      {language === 'te' ? 'పరిశుద్ధ వివాహ వేదిక' : 'Holy Altar Target'}
-                    </div>
-                  </div>
-
-                  {/* Oscillating Garland / Timing Bar */}
-                  <div className="w-full relative px-4">
-                    <div className="h-6 w-full bg-gray-200 rounded-full relative overflow-hidden border border-[#0F3D32]/40">
-                      <div className="absolute left-0 top-0 bottom-0 w-[35%] bg-amber-100/60" />
-                      <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500 flex items-center justify-center">
-                        <span className="text-[9px] font-cinzel font-extrabold text-emerald-950 uppercase tracking-widest">
-                          ✨ {language === 'te' ? 'బుల్స్‌ఐ (100 Pts)' : 'Bullseye (100 Pts)'}
-                        </span>
-                      </div>
-                      <div className="absolute right-0 top-0 bottom-0 w-[35%] bg-amber-100/60" />
-                    </div>
-
-                    <div
-                      className="absolute -top-3 transition-all duration-75 pointer-events-none -translate-x-1/2"
-                      style={{ left: `${varamalaOscillator}%` }}
-                    >
-                      <div className="text-3xl animate-bounce filter drop-shadow-md">
-                        💐
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Toss Result Banner */}
-                {varamalaResult && (
-                  <div className="mt-4 p-3 rounded-2xl bg-white border border-[#0F3D32]/30 animate-fadeIn">
-                    <div className="font-cinzel text-sm font-bold text-[#0F3D32]">
-                      {varamalaResult.quality} (+{varamalaResult.pts} Pts)
-                    </div>
-                    <p className="font-cormorant text-xs sm:text-sm text-gray-700 italic mt-0.5">
-                      {varamalaResult.msg}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Toss Control & Stats */}
-              <div className="flex flex-col items-center justify-center gap-3">
-                {!varamalaActive || isVaramalaComplete ? (
-                  <button
-                    type="button"
-                    onClick={handleStartVaramala}
-                    className="px-8 py-3 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 text-[#FFF2C4] font-cinzel text-xs sm:text-sm font-bold uppercase tracking-[0.2em] border-2 border-[#D4AF37] shadow-xl flex items-center gap-2 cursor-pointer transition-all"
-                  >
-                    <Play className="w-4 h-4 fill-current text-[#D4AF37]" />
-                    <span>{isVaramalaComplete ? (language === 'te' ? "మళ్లీ విసరండి (5 రౌండ్లు)" : "Toss Again (5 Rounds)") : (language === 'te' ? "వరమాల ఛాలెంజ్ ప్రారంభించండి" : "Start Garland Toss Challenge")}</span>
-                  </button>
                 ) : (
-                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="space-y-3">
+                    {/* Active Game Top HUD */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-[#0F3D32] text-white font-cinzel text-xs font-bold">
+                      <div>
+                        {language === 'te' ? 'సమయం:' : 'Time:'} <span className="text-[#F1DFA6] text-sm">{gameTimeLeft}s</span>
+                      </div>
+                      <div>
+                        {language === 'te' ? 'స్కోర్:' : 'Score:'} <span className="text-[#F1DFA6] text-sm">{blessingScore} pts</span>
+                      </div>
+                      <div>
+                        {language === 'te' ? 'కాంబో:' : 'Combo:'} <span className="text-[#D4AF37]">{combo}x</span>
+                      </div>
+                    </div>
+
+                    {/* Interactive Canvas Area */}
+                    <div
+                      ref={gameAreaRef}
+                      onPointerMove={handlePointerMove}
+                      className="relative h-64 sm:h-72 w-full bg-gradient-to-b from-amber-50/50 via-white to-emerald-50/40 rounded-2xl border-2 border-[#D4AF37]/50 overflow-hidden cursor-crosshair touch-none select-none"
+                    >
+                      {/* Falling Items */}
+                      {fallingItems.map(item => (
+                        <div
+                          key={item.id}
+                          className="absolute transform -translate-x-1/2 -translate-y-1/2 text-2xl transition-all duration-75 pointer-events-none"
+                          style={{ left: `${item.x}%`, top: `${item.y}%` }}
+                        >
+                          {item.emoji}
+                        </div>
+                      ))}
+
+                      {/* Golden Thali Paddle */}
+                      <div
+                        className="absolute bottom-2 transform -translate-x-1/2 flex flex-col items-center pointer-events-none transition-all duration-75"
+                        style={{ left: `${thaliX}%` }}
+                      >
+                        <div className="w-24 sm:w-28 h-6 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 border-2 border-amber-600 shadow-lg flex items-center justify-center text-[10px] font-cinzel font-bold text-amber-950">
+                          👑 Thali
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollReveal>
+
+            {/* GAME 2: VARAMALA SACRED GARLAND TOSS */}
+            <ScrollReveal direction="up" threshold={0.15}>
+              <div className="bg-white rounded-3xl border-2 border-[#D4AF37] p-5 sm:p-7 shadow-lg space-y-4">
+                <div className="flex items-center gap-2.5 border-b border-gray-100 pb-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#5E1626]/10 flex items-center justify-center text-lg">
+                    🌸
+                  </div>
+                  <div>
+                    <h4 className="font-decorative text-xl sm:text-2xl font-bold text-[#0F3D32]">
+                      {language === 'te' ? 'ఆట 2: దివ్య వరమాల సమర్పణ' : 'Game 2: Sacred Varamala Garland Toss'}
+                    </h4>
+                    <span className="font-cormorant text-xs text-gray-500 italic">
+                      {language === 'te' ? 'సరిగ్గా మధ్యలో (బుల్స్‌ఐ) మాలను వేయండి. గురి తప్పితే 30 పాయింట్లు ప్రత్యర్థికి బదిలీ అవుతాయి!' : 'Time your toss at the center target! Missed tosses transfer 30 points to rival team.'}
+                    </span>
+                  </div>
+                </div>
+
+                {!varamalaActive ? (
+                  <div className="py-8 px-4 text-center rounded-2xl bg-[#F4F8F5] border border-dashed border-[#0F3D32]/30 space-y-3">
+                    <div className="text-4xl animate-pulse">💐🎯</div>
+                    <h5 className="font-cinzel text-sm font-bold text-[#0F3D32] uppercase">
+                      {language === 'te' ? '5 వరమాలల ఛాలెంజ్' : '5-Garland Precision Toss'}
+                    </h5>
                     <button
                       type="button"
-                      onClick={handleTossGarland}
-                      className="px-10 py-4 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 active:scale-95 text-[#FFF2C4] font-cinzel text-sm sm:text-base font-extrabold uppercase tracking-[0.22em] border-2 border-[#D4AF37] shadow-2xl flex items-center gap-2 cursor-pointer transition-all animate-pulse"
+                      onClick={handleStartVaramala}
+                      className="px-6 py-2.5 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
                     >
-                      <span>💐 {language === 'te' ? 'ఇప్పుడే మాల విసరండి!' : 'TOSS GARLAND NOW!'}</span>
+                      <Play className="w-4 h-4 fill-current text-[#D4AF37]" />
+                      <span>{language === 'te' ? 'వరమాల ఆట ఆడండి' : 'Play Varamala Toss'}</span>
                     </button>
-                    <div className="font-cinzel text-xs font-bold text-gray-600">
-                      {language === 'te' ? 'మిగిలిన విసిరివేతలు:' : 'Tosses Remaining:'} <span className="text-[#0F3D32] text-base font-bold">{varamalaTossesLeft}</span> / 5
+                  </div>
+                ) : (
+                  <div className="space-y-4 p-4 rounded-2xl bg-[#F4F8F5] border border-gray-200">
+                    <div className="flex items-center justify-between text-xs font-cinzel font-bold text-[#0F3D32]">
+                      <span>{language === 'te' ? 'మిగిలిన మాలలు:' : 'Tosses Left:'} <strong className="text-base text-[#D4AF37]">{varamalaTossesLeft}</strong>/5</span>
+                      <span>{language === 'te' ? 'ఈ ఆట స్కోర్:' : 'Round Total:'} <strong className="text-base">{varamalaTotalScore} pts</strong></span>
                     </div>
-                  </div>
-                )}
 
-                {varamalaTotalScore > 0 && (
-                  <div className="text-xs font-cinzel text-[#0F3D32] font-semibold">
-                    {language === 'te' ? 'ఈ ఆట స్కోర్:' : 'Session Score:'} <strong>+{varamalaTotalScore} pts</strong> &bull; Team {userTeam === 'moshe' ? 'Moshe' : 'Priya'}!
-                  </div>
-                )}
-              </div>
+                    {/* Oscillating Bar & Target */}
+                    <div className="relative h-12 bg-gray-200 rounded-2xl overflow-hidden border border-gray-300 flex items-center justify-center">
+                      {/* Bullseye Zone */}
+                      <div className="absolute w-12 h-full bg-gradient-to-r from-amber-300 to-yellow-400 opacity-80 border-x-2 border-amber-600 flex items-center justify-center font-cinzel text-[10px] font-bold text-amber-950">
+                        🎯 Bullseye
+                      </div>
 
-            </div>
-          </ScrollReveal>
-        </div>
-
-        {/* ========================================================
-            GAME 3: SACRED KALASHA RING DUEL
-           ======================================================== */}
-        <div id="game-kalasha" className="scroll-mt-24">
-          <ScrollReveal direction="up" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-xl text-center">
-              
-              <div className="max-w-xl mx-auto mb-6">
-                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
-                  <span>🏺 {language === 'te' ? 'ఆట 03' : 'Game 03'}</span>
-                </div>
-                <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
-                  🏺 {language === 'te' ? 'బంగారు కలశం ఉంగరం ఆట' : 'The Golden Kalasha Ring Quest'}
-                </h3>
-                <p className="font-cormorant text-base text-[#2A2A2A]/80 italic mt-1">
-                  {language === 'te'
-                    ? 'పాల కలశంలో దాగి ఉన్న పవిత్ర బంగారు ఉంగరాన్ని కనిపెట్టండి! 3 రౌండ్లలో ఎవరు ఎక్కువసార్లు ఉంగరాన్ని కనిపెడతారో చూద్దాం!'
-                    : 'A consecrated gold ring is slipped into one of the three milk & rose petal pots. Guess the right pot to win points! (Best of 3)'}
-                </p>
-              </div>
-
-              {/* Kalasha Duel Scoreboard */}
-              <div className="grid grid-cols-2 gap-4 max-w-md mx-auto mb-6">
-                <div className={`p-3 rounded-2xl border-2 text-center ${userTeam === 'moshe' ? 'border-[#0F3D32] bg-[#0F3D32]/10' : 'border-gray-200'}`}>
-                  <div className="text-xl">👔</div>
-                  <div className="font-cinzel text-xs font-bold text-[#0F3D32]">{language === 'te' ? 'మోషే దొర' : 'Moshe Dora'}</div>
-                  <div className="font-cinzel text-xl font-bold text-[#0F3D32]">{kalashaScores.moshe} {language === 'te' ? 'విజయాలు' : 'Wins'}</div>
-                </div>
-
-                <div className={`p-3 rounded-2xl border-2 text-center ${userTeam === 'priya' ? 'border-[#5E1626] bg-[#5E1626]/10' : 'border-gray-200'}`}>
-                  <div className="text-xl">💐</div>
-                  <div className="font-cinzel text-xs font-bold text-[#5E1626]">{language === 'te' ? 'నెల్లూరి ప్రియ' : 'Nelluri Priya'}</div>
-                  <div className="font-cinzel text-xl font-bold text-[#5E1626]">{kalashaScores.priya} {language === 'te' ? 'విజయాలు' : 'Wins'}</div>
-                </div>
-              </div>
-
-              {/* Round Indicator */}
-              {!isMatchOver && (
-                <div className="font-cinzel text-xs font-bold text-[#0F3D32] uppercase tracking-wider mb-4">
-                  {language === 'te' ? `రౌండ్ ${roundNumber} / 3 • ఒక కలశాన్ని ఎంచుకోండి` : `Round ${roundNumber} of 3 • Select a Milk & Rose Kalasha`}
-                </div>
-              )}
-
-              {/* 3 Traditional Pots */}
-              {!isMatchOver && (
-                <div className="grid grid-cols-3 gap-3 sm:gap-6 max-w-lg mx-auto mb-8">
-                  {[0, 1, 2].map((idx) => {
-                    const isChosen = selectedKalasha === idx;
-                    const hasRing = kalashaTarget === idx;
-                    const isRevealed = selectedKalasha !== null;
-
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        disabled={isRevealed}
-                        onClick={() => handlePickKalasha(idx)}
-                        className={`relative p-4 sm:p-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center cursor-pointer group ${
-                          isChosen && hasRing
-                            ? 'border-emerald-600 bg-emerald-50 scale-105 shadow-md ring-2 ring-emerald-400'
-                            : isChosen && !hasRing
-                            ? 'border-rose-400 bg-rose-50 scale-95'
-                            : 'border-[#0F3D32]/30 bg-white hover:border-[#0F3D32] hover:bg-[#F2F7F4] hover:scale-105'
-                        }`}
+                      {/* Moving Garland Indicator */}
+                      <div
+                        className="absolute transform -translate-x-1/2 text-2xl transition-all duration-75 pointer-events-none"
+                        style={{ left: `${varamalaOscillator}%` }}
                       >
-                        <div className="text-4xl sm:text-5xl my-2 transition-transform group-hover:rotate-6">
-                          {isRevealed ? (
-                            hasRing ? (
-                              <span className="animate-bounce inline-block filter drop-shadow">
-                                💍
-                              </span>
-                            ) : (
-                              <span className="text-3xl opacity-50">
-                                🥛
-                              </span>
-                            )
-                          ) : (
-                            <span className="filter drop-shadow-xs">
-                              🏺
-                            </span>
-                          )}
-                        </div>
+                        🌸
+                      </div>
+                    </div>
 
-                        <div className="font-cinzel text-xs font-bold text-[#0F3D32] uppercase tracking-wider mt-2">
-                          {language === 'te' ? `కలశం #${idx + 1}` : `Kalasha #${idx + 1}`}
-                        </div>
-                        <div className="text-[11px] font-cormorant text-gray-500 italic">
-                          {isRevealed && hasRing 
-                            ? (language === 'te' ? "ఉంగరం దొరికింది!" : "Gold Ring Found!") 
-                            : (language === 'te' ? "పాల గులాబీ దళాలు" : "Milk & Rose Petals")}
-                        </div>
+                    {/* Result Callout */}
+                    {varamalaResult && (
+                      <div className={`p-3 rounded-xl text-center font-cinzel text-xs font-bold ${
+                        varamalaResult.isMiss ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      }`}>
+                        <div>{varamalaResult.quality} {varamalaResult.pts > 0 ? `(+${varamalaResult.pts} pts)` : ''}</div>
+                        <div className="font-cormorant text-xs font-normal mt-0.5">{varamalaResult.msg}</div>
+                      </div>
+                    )}
+
+                    {/* Action Button */}
+                    {!isVaramalaComplete ? (
+                      <button
+                        type="button"
+                        onClick={handleTossGarland}
+                        className="w-full py-3 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <Target className="w-4 h-4 text-[#D4AF37]" />
+                        <span>{language === 'te' ? 'మాల విసరండి! (Toss Garland)' : 'Toss Sacred Garland Now!'}</span>
                       </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Round Commentary */}
-              {roundOutcome && !isMatchOver && (
-                <div className="p-4 rounded-2xl bg-[#F2F7F4] border border-[#0F3D32]/30 max-w-md mx-auto mb-6 animate-fadeIn">
-                  <p className="font-cormorant text-base text-[#2A2A2A] italic font-semibold">
-                    {roundOutcome}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleNextRound}
-                    className="mt-3 px-6 py-2 rounded-full bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer"
-                  >
-                    {roundNumber >= 3 
-                      ? (language === 'te' ? "ఫలితాలు చూడండి 👑" : "View Tournament Outcome 👑") 
-                      : (language === 'te' ? "తదుపరి రౌండ్‌కు వెళ్లండి ➡️" : "Proceed to Next Round ➡️")}
-                  </button>
-                </div>
-              )}
-
-              {/* Match Over Outcome */}
-              {isMatchOver && (
-                <div className="p-6 rounded-3xl bg-gradient-to-b from-[#F9FBF8] to-[#EFF6F1] border-2 border-[#0F3D32]/40 max-w-lg mx-auto mb-6 animate-fadeIn shadow-md">
-                  <div className="text-4xl mb-2">
-                    {kalashaScores.moshe > kalashaScores.priya ? "👑" : kalashaScores.priya > kalashaScores.moshe ? "💐" : "🕊️"}
+                    ) : (
+                      <div className="text-center space-y-2 pt-2">
+                        <div className="font-cinzel text-sm font-bold text-[#0F3D32]">
+                          🎉 {language === 'te' ? 'వరమాల రౌండ్ పూర్తయింది!' : 'Varamala Round Finished!'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStartVaramala}
+                          className="px-5 py-2 rounded-xl bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase cursor-pointer"
+                        >
+                          {language === 'te' ? 'మళ్లీ ఆడండి' : 'Play Again'}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <h4 className="font-decorative text-2xl text-[#0F3D32] font-bold">
-                    {kalashaScores.moshe > kalashaScores.priya
-                      ? (language === 'te' ? "మోషే దొర బంగారు ఉంగరాల విజేత! (+100 Pts)" : "Moshe Dora Wins The Golden Ring Quest! (+100 Pts)")
-                      : kalashaScores.priya > kalashaScores.moshe
-                      ? (language === 'te' ? "నెల్లూరి ప్రియ రాచరిక కలశ విజేత! (+100 Pts)" : "Nelluri Priya Conquers The Royal Kalasha! (+100 Pts)")
-                      : (language === 'te' ? "ఇరువైపులా సమాన విజయం • పరిపూర్ణ దైవ బంధం!" : "A Divine Holy Tie • Perfect Biblical Equality!")}
-                  </h4>
-                  <p className="font-cormorant text-base text-[#2A2A2A] italic mt-2 leading-relaxed">
-                    {kalashaScores.moshe > kalashaScores.priya
-                      ? (language === 'te' ? "వివాహ సంప్రదాయం ప్రకారం ప్రయాణాలలో సంగీతాన్ని ఎంచుకునే హక్కు మోషే దొర గారిది!" : "Tradition says Moshe Dora gets supreme authority over Sunday road-trip music playlists!")
-                      : kalashaScores.priya > kalashaScores.moshe
-                      ? (language === 'te' ? "సంప్రదాయం ప్రకారం షాపింగ్ మరియు విహారయాత్రలను నిర్ణయించే అధికారం ప్రియ గారిది!" : "Tradition decrees that Priya gets executive power over all holiday destinations & wedding shopping!")
-                      : (language === 'te' ? "దేవుని సన్నిధిలో ఏకమైన ఇద్దరు వ్యక్తులు — ఆనందం, పరస్పర గౌరవంతో ఆశీర్వదించబడ్డారు!" : "Two hearts beating as one in God's Eden garden — blessed with laughter and mutual respect!")}
-                  </p>
+                )}
+              </div>
+            </ScrollReveal>
 
-                  <button
-                    type="button"
-                    onClick={handleResetKalashaGame}
-                    className="mt-5 px-6 py-2.5 rounded-full bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>{language === 'te' ? 'మరో మ్యాచ్ ఆడండి' : 'Play Another Duel'}</span>
-                  </button>
+            {/* GAME 3: KALASHA RING QUEST DUEL */}
+            <ScrollReveal direction="up" threshold={0.15}>
+              <div className="bg-white rounded-3xl border-2 border-[#D4AF37] p-5 sm:p-7 shadow-lg space-y-4">
+                <div className="flex items-center gap-2.5 border-b border-gray-100 pb-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#D4AF37]/20 flex items-center justify-center text-lg">
+                    💍
+                  </div>
+                  <div>
+                    <h4 className="font-decorative text-xl sm:text-2xl font-bold text-[#0F3D32]">
+                      {language === 'te' ? 'ఆట 3: కలశ ఉంగరాల అన్వేషణ (Best of 3)' : 'Game 3: Sacred Kalasha Ring Duel'}
+                    </h4>
+                    <span className="font-cormorant text-xs text-gray-500 italic">
+                      {language === 'te' ? '3 కలశాలలో ఒకదాంట్లో దాచిన ఉంగరాన్ని కనిపెట్టండి. తప్పు కుండను ఎంచుకుంటే ప్రత్యర్థికి 50 పాయింట్లు బదిలీ అవుతాయి!' : 'Find the ring hidden in 3 holy pots. Wrong pick transfers 50 points directly to rival!'}
+                    </span>
+                  </div>
                 </div>
-              )}
-            </div>
-          </ScrollReveal>
-        </div>
+
+                <div className="p-4 sm:p-6 rounded-2xl bg-[#F4F8F5] border border-gray-200 space-y-5">
+                  <div className="flex items-center justify-between text-xs font-cinzel font-bold text-[#0F3D32]">
+                    <span>{language === 'te' ? 'రౌండ్:' : 'Round:'} {roundNumber}/3</span>
+                    <span>Moshe: {kalashaScores.moshe} &bull; Priya: {kalashaScores.priya}</span>
+                  </div>
+
+                  {/* 3 Kalasha Pots */}
+                  <div className="grid grid-cols-3 gap-3 sm:gap-6">
+                    {[0, 1, 2].map((idx) => {
+                      const isSelected = selectedKalasha === idx;
+                      const hasRing = idx === kalashaTarget;
+
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          disabled={selectedKalasha !== null || isMatchOver}
+                          onClick={() => handlePickKalasha(idx)}
+                          className={`p-4 sm:p-6 rounded-2xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2 ${
+                            selectedKalasha === null
+                              ? 'bg-white border-amber-300 hover:border-[#0F3D32] hover:scale-105 shadow-sm'
+                              : isSelected && hasRing
+                              ? 'bg-emerald-100 border-emerald-500 shadow-md scale-105 ring-2 ring-emerald-300'
+                              : isSelected && !hasRing
+                              ? 'bg-amber-100 border-amber-500 shadow-md scale-105'
+                              : hasRing
+                              ? 'bg-emerald-50 border-emerald-300'
+                              : 'bg-gray-100 border-gray-200 opacity-60'
+                          }`}
+                        >
+                          <div className="text-4xl sm:text-5xl">
+                            {selectedKalasha !== null && hasRing ? '💍' : '🏺'}
+                          </div>
+                          <span className="font-cinzel text-xs font-bold text-[#0F3D32]">
+                            {language === 'te' ? `కలశం ${idx + 1}` : `Kalasha ${idx + 1}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Outcome Message */}
+                  {roundOutcome && (
+                    <div className="p-3.5 rounded-xl bg-white border border-gray-200 text-center font-cinzel text-xs font-bold text-[#0F3D32] shadow-xs">
+                      {roundOutcome}
+                    </div>
+                  )}
+
+                  {/* Next / Reset Controls */}
+                  {selectedKalasha !== null && (
+                    <div className="text-center pt-2">
+                      {!isMatchOver ? (
+                        <button
+                          type="button"
+                          onClick={handleNextRound}
+                          className="px-6 py-2.5 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
+                        >
+                          <span>{language === 'te' ? 'తదుపరి రౌండ్' : 'Next Round'}</span>
+                          <ArrowRight className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResetKalashaGame}
+                          className="px-6 py-2.5 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
+                        >
+                          <RotateCw className="w-3.5 h-3.5" />
+                          <span>{language === 'te' ? 'మళ్లీ కలశం ఆట ఆడండి' : 'Play Kalasha Match Again'}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ScrollReveal>
+
+            {/* ========================================================
+                LEADERBOARD & MATCH HISTORY TIMELINE TABS
+               ======================================================== */}
+            <WeddingLeaderboard
+              currentPlayerPhone={playerProfile.phone}
+              currentPlayerName={playerProfile.name}
+            />
+          </>
+        )}
 
         {/* ========================================================
-            LIVE WEDDING GAMES LEADERBOARD (5 PLAYERS PER PAGE)
+            PROFILE EDIT MODAL (FOR SWITCHING IDENTITIES)
            ======================================================== */}
-        <WeddingLeaderboard 
-          currentPlayerPhone={playerProfile.phone} 
-          currentPlayerName={playerProfile.name} 
-        />
-
-      </div>
-
-      {/* ========================================================
-          PLAYER REGISTRATION / IDENTITY MODAL
-         ======================================================== */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#FFFDF9] border-2 border-[#D4AF37] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative animate-fadeIn">
-            
-            <button
-              type="button"
-              onClick={() => setShowProfileModal(false)}
-              className="absolute top-4 right-4 p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center mb-5">
-              <div className="w-12 h-12 rounded-full bg-[#0F3D32]/10 border border-[#0F3D32]/30 flex items-center justify-center text-[#0F3D32] mx-auto mb-2">
-                <Trophy className="w-6 h-6 text-[#D4AF37]" />
+        {showProfileModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border-2 border-[#D4AF37] shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-[#0F3D32]" />
+                  <h4 className="font-decorative text-2xl font-bold text-[#0F3D32]">
+                    {language === 'te' ? 'ప్లేయర్ ఐడీ వివరాలు' : 'Switch / Edit Player ID'}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="p-1 rounded-full text-gray-400 hover:text-black cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <h3 className="font-decorative text-2xl text-[#0F3D32] font-bold">
-                {language === 'te' ? 'ప్లేయర్ ఐడీ నమోదు చేసుకోండి' : 'Enter Your Player ID'}
-              </h3>
-              <p className="font-cormorant text-sm text-[#2A2A2A]/80 italic mt-1">
-                {language === 'te'
-                  ? 'మీ ఫోన్ నంబర్ మరియు పేరు నమోదు చేయండి. మళ్లీ ఆడినప్పుడు మీ పాత మార్కులకు కొత్త మార్కులు కలుస్తాయి!'
-                  : 'Enter your phone number & name. When you play again with the same phone number, all marks add to your previous score!'}
-              </p>
-            </div>
 
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div>
-                <label className="block font-cinzel text-xs font-bold text-[#0F3D32] uppercase mb-1">
-                  {language === 'te' ? 'మీ పేరు / గెస్ట్ పేరు *' : 'Your Full Name / Guest Name *'}
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              {modalError && (
+                <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-cinzel text-center">
+                  {modalError}
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div>
+                  <label className="block font-cinzel text-xs font-bold uppercase text-gray-700 mb-1">
+                    {language === 'te' ? 'మీ పేరు (Player Name)' : 'Player Name'}
+                  </label>
                   <input
                     type="text"
                     required
-                    placeholder={language === 'te' ? "ఉదా: రాజు లేదా రమేష్" : "e.g. John Doe, Uncle David"}
                     value={modalName}
                     onChange={(e) => setModalName(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32]"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32]"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-cinzel text-xs font-bold text-[#0F3D32] uppercase mb-1">
-                  {language === 'te' ? 'ఫోన్ నంబర్ (ఐడీగా ఉపయోగపడుతుంది) *' : 'Phone Number (Used as Unique ID) *'}
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <div>
+                  <label className="block font-cinzel text-xs font-bold uppercase text-gray-700 mb-1">
+                    {language === 'te' ? 'ఫోన్ నంబర్ (Phone Number)' : 'Phone Number'}
+                  </label>
                   <input
                     type="tel"
                     required
-                    placeholder={language === 'te' ? "ఉదా: 9640448277" : "e.g. 9640448277"}
                     value={modalPhone}
                     onChange={(e) => setModalPhone(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32]"
+                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl font-cormorant text-base text-gray-900 focus:outline-none focus:border-[#0F3D32]"
                   />
                 </div>
-                <span className="text-[11px] font-cormorant text-gray-500 italic mt-0.5 block">
-                  {language === 'te' ? 'నంబర్ గోప్యంగా ఉంచబడుతుంది (కొన్ని అంకెలు మాత్రమే కనిపిస్తాయి).' : 'Phone number is partially masked on the public leaderboard for privacy.'}
-                </span>
-              </div>
 
-              {profileError && (
-                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-cinzel">
-                  {profileError}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowProfileModal(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-cinzel text-xs font-bold hover:bg-gray-100 cursor-pointer"
+                  >
+                    {language === 'te' ? 'రద్దు' : 'Cancel'}
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-xl bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider shadow cursor-pointer"
+                  >
+                    {language === 'te' ? 'భద్రపరచు' : 'Save ID'}
+                  </button>
                 </div>
-              )}
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-[1.02] text-[#FFF2C4] font-cinzel text-xs sm:text-sm font-bold uppercase tracking-[0.18em] border-2 border-[#D4AF37] shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
-                >
-                  <Trophy className="w-4 h-4 text-[#D4AF37]" />
-                  <span>{language === 'te' ? 'సేవ్ చేయండి & ఆడటం ప్రారంభించండి' : 'Save & Join Leaderboard'}</span>
-                </button>
-              </div>
-            </form>
-
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
+      </div>
     </section>
   );
 };

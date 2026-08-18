@@ -13,6 +13,24 @@ interface LeaderboardEntry {
   lastPlayed: string;
 }
 
+interface MatchHistoryEntry {
+  id: string;
+  playerName: string;
+  playerPhone: string;
+  team: "moshe" | "priya";
+  opponentTeam: "moshe" | "priya";
+  gameName: string;
+  outcome: "won" | "lost" | "partial";
+  pointsWon: number;
+  pointsLost: number;
+  pointsTransferredToOpponent: number;
+  description: string;
+  teluguDescription: string;
+  timestamp: string;
+  formattedTime: string;
+  formattedDate: string;
+}
+
 interface LiveWeddingState {
   scores: {
     moshe: number;
@@ -20,6 +38,7 @@ interface LiveWeddingState {
     totalPlays: number;
   };
   leaderboard: Record<string, LeaderboardEntry>;
+  matchHistory: MatchHistoryEntry[];
   blessings: Array<{
     id: string;
     name: string;
@@ -41,6 +60,7 @@ const defaultState: LiveWeddingState = {
     totalPlays: 0
   },
   leaderboard: {},
+  matchHistory: [],
   blessings: []
 };
 
@@ -61,6 +81,7 @@ try {
         totalPlays: Number(parsed?.scores?.totalPlays) || 0
       },
       leaderboard: typeof parsed?.leaderboard === "object" && parsed?.leaderboard !== null ? parsed.leaderboard : {},
+      matchHistory: Array.isArray(parsed?.matchHistory) ? parsed.matchHistory : [],
       blessings: Array.isArray(parsed?.blessings) ? parsed.blessings : []
     };
   } else {
@@ -85,8 +106,27 @@ async function startServer() {
   app.use(express.json());
 
   // -------------------------------------------------------------
-  // API ROUTES (SCORES, LEADERBOARD & BLESSINGS SHARED ACROSS ALL USERS)
+  // API ROUTES (SCORES, LEADERBOARD, MATCH HISTORY & BLESSINGS)
   // -------------------------------------------------------------
+
+  // Reset Full Game Data & Start Fresh (Scores, Leaderboard, Match Logs)
+  app.post("/api/reset-game-data", (req, res) => {
+    liveState.scores = {
+      moshe: 0,
+      priya: 0,
+      totalPlays: 0
+    };
+    liveState.leaderboard = {};
+    liveState.matchHistory = [];
+    saveStateToFile();
+    res.json({
+      success: true,
+      message: "Full game data reset successfully.",
+      scores: liveState.scores,
+      leaderboard: [],
+      matchHistory: []
+    });
+  });
 
   // Get Live Global Scores
   app.get("/api/scores", (req, res) => {
@@ -116,7 +156,7 @@ async function startServer() {
 
   // Record / Add Marks to Player Score (Phone number as unique key)
   app.post("/api/leaderboard", (req, res) => {
-    const { name, phone, points, team } = req.body;
+    const { name, phone, points, team, pointsLost, pointsTransferredToOpponent } = req.body;
     if (!name || !phone || points === undefined) {
       return res.status(400).json({ error: "Name, phone, and points are required." });
     }
@@ -125,6 +165,9 @@ async function startServer() {
     const cleanName = String(name).trim().slice(0, 80);
     const safePoints = Math.max(0, Math.min(Number(points) || 0, 5000));
     const safeTeam = team === "priya" ? "priya" : "moshe";
+    const opponentTeam = safeTeam === "moshe" ? "priya" : "moshe";
+    const safeLost = Math.max(0, Math.min(Number(pointsLost) || 0, 5000));
+    const safeTransferred = Math.max(0, Math.min(Number(pointsTransferredToOpponent) || 0, 5000));
 
     if (!cleanPhone || cleanPhone.length < 4) {
       return res.status(400).json({ error: "Invalid phone number." });
@@ -133,7 +176,7 @@ async function startServer() {
     const existing = liveState.leaderboard[cleanPhone];
     if (existing) {
       existing.name = cleanName || existing.name;
-      existing.score = (existing.score || 0) + safePoints;
+      existing.score = Math.max(0, (existing.score || 0) + safePoints - safeLost);
       existing.team = safeTeam;
       existing.gamesPlayed = (existing.gamesPlayed || 0) + 1;
       existing.lastPlayed = new Date().toISOString();
@@ -150,15 +193,74 @@ async function startServer() {
       };
     }
 
-    // Also contribute to team overall score
+    // Update team scores with additions, losses and transfers
     if (safePoints > 0) {
       liveState.scores[safeTeam] += safePoints;
-      liveState.scores.totalPlays += 1;
     }
+    if (safeLost > 0) {
+      liveState.scores[safeTeam] = Math.max(0, liveState.scores[safeTeam] - safeLost);
+    }
+    if (safeTransferred > 0) {
+      liveState.scores[opponentTeam] += safeTransferred;
+    }
+    liveState.scores.totalPlays += 1;
 
     saveStateToFile();
     const sorted = Object.values(liveState.leaderboard).sort((a, b) => b.score - a.score);
-    res.json({ success: true, player: liveState.leaderboard[cleanPhone], leaderboard: sorted });
+    res.json({ success: true, player: liveState.leaderboard[cleanPhone], leaderboard: sorted, scores: liveState.scores });
+  });
+
+  // Get Match History & Event Logs
+  app.get("/api/match-history", (req, res) => {
+    res.json(liveState.matchHistory.slice(0, 150));
+  });
+
+  // Log Match Activity Event (with timings, player, outcome and transfer notes)
+  app.post("/api/match-history", (req, res) => {
+    const { 
+      playerName, 
+      playerPhone, 
+      team, 
+      opponentTeam, 
+      gameName, 
+      outcome, 
+      pointsWon, 
+      pointsLost, 
+      pointsTransferredToOpponent, 
+      description, 
+      teluguDescription 
+    } = req.body;
+
+    if (!playerName || !gameName) {
+      return res.status(400).json({ error: "Player name and game name are required." });
+    }
+
+    const now = new Date();
+    const cleanPhone = playerPhone ? String(playerPhone).replace(/[^\d+]/g, "").slice(-15) : "";
+    const safeTeam = team === "priya" ? "priya" : "moshe";
+    const safeOpponentTeam = opponentTeam === "moshe" ? "moshe" : "priya";
+
+    const newLog: MatchHistoryEntry = {
+      id: `match_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      playerName: String(playerName).trim().slice(0, 80),
+      playerPhone: cleanPhone,
+      team: safeTeam,
+      opponentTeam: safeOpponentTeam,
+      gameName: String(gameName).trim().slice(0, 80),
+      outcome: outcome === "lost" ? "lost" : outcome === "partial" ? "partial" : "won",
+      pointsWon: Math.max(0, Number(pointsWon) || 0),
+      pointsLost: Math.max(0, Number(pointsLost) || 0),
+      pointsTransferredToOpponent: Math.max(0, Number(pointsTransferredToOpponent) || 0),
+      description: String(description || "").trim().slice(0, 300),
+      teluguDescription: String(teluguDescription || "").trim().slice(0, 300),
+      timestamp: now.toISOString(),
+      formattedTime: now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
+      formattedDate: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    };
+
+    liveState.matchHistory = [newLog, ...liveState.matchHistory].slice(0, 200);
+    saveStateToFile();
+    res.json({ success: true, entry: newLog, totalLogs: liveState.matchHistory.length });
   });
 
   // Get Live Global Blessings
