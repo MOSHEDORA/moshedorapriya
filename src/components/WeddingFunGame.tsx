@@ -22,6 +22,7 @@ import confetti from 'canvas-confetti';
 import { doc, onSnapshot, setDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ScrollReveal } from './ScrollReveal';
+import { useLanguage } from '../context/LanguageContext';
 
 // Persistent LocalStorage Keys (Genuine guest data)
 const STORAGE_TEAM_SCORES_KEY = 'moshe_priya_eden_scores_clean_v1';
@@ -47,7 +48,7 @@ interface FallingItem {
 }
 
 export const WeddingFunGame: React.FC = () => {
-  const [activeGame, setActiveGame] = useState<'talambralu' | 'kalasha' | 'varamala'>('talambralu');
+  const { language } = useLanguage();
 
   // ==========================================
   // REAL GROOM VS BRIDE TEAM SCORES (NO DUMMY VALUES)
@@ -90,27 +91,19 @@ export const WeddingFunGame: React.FC = () => {
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const nextScores = {
+          const synced = {
             moshe: Number(data.moshe) || 0,
             priya: Number(data.priya) || 0,
             totalPlays: Number(data.totalPlays) || 0
           };
-          setTeamScores(nextScores);
+          setTeamScores(synced);
           try {
-            localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(nextScores));
+            localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(synced));
           } catch {}
-        } else {
-          // Initialize global document if first time
-          setDoc(scoresDocRef, {
-            moshe: 0,
-            priya: 0,
-            totalPlays: 0,
-            lastUpdated: new Date().toISOString()
-          }, { merge: true }).catch(console.error);
         }
       },
       (err) => {
-        console.warn('Firestore snapshot error (using fallback):', err);
+        console.warn('Firestore game score listener fallback to local:', err);
       }
     );
 
@@ -119,51 +112,43 @@ export const WeddingFunGame: React.FC = () => {
     };
   }, []);
 
-  // Helper to persist scores globally to Firestore & locally
+  // Write points to Firestore and local state
   const addPointsToTeam = async (points: number, targetTeam?: 'moshe' | 'priya') => {
-    const team = targetTeam || userTeam;
+    const designatedTeam = targetTeam || userTeam;
+    if (points <= 0) return;
 
-    // 1. Optimistic Local Update
+    // Trigger visual celebration flyout
+    setRecentPointFlyout({ team: designatedTeam, pts: points });
+    setTimeout(() => setRecentPointFlyout(null), 3000);
+
+    // Optimistic local update
     setTeamScores(prev => {
-      const next = {
+      const updated = {
         ...prev,
-        [team]: prev[team] + points,
+        [designatedTeam]: prev[designatedTeam] + points,
         totalPlays: prev.totalPlays + 1
       };
       try {
-        localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(next));
+        localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(updated));
       } catch {}
-      return next;
+      return updated;
     });
 
-    // 2. Show temporary flyout animation
-    setRecentPointFlyout({ team, pts: points });
-    setTimeout(() => setRecentPointFlyout(null), 2000);
-
-    // 3. Atomically increment Firestore score document in real time
+    // Write to Firestore database
     try {
       const scoresDocRef = doc(db, 'game_scores', 'global_scores');
       await setDoc(
         scoresDocRef,
         {
-          [team]: increment(points),
+          [designatedTeam]: increment(points),
           totalPlays: increment(1),
           lastUpdated: new Date().toISOString()
         },
         { merge: true }
       );
     } catch (err) {
-      console.warn('Firestore write warning:', err);
+      console.warn('Firestore score write fallback:', err);
     }
-
-    // 4. Also notify backend endpoint as dual redundancy
-    try {
-      fetch('/api/scores', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team, points })
-      }).catch(() => {});
-    } catch {}
   };
 
   const handleSelectTeam = (team: 'moshe' | 'priya') => {
@@ -171,11 +156,17 @@ export const WeddingFunGame: React.FC = () => {
     try {
       localStorage.setItem(STORAGE_USER_CHAMPION_KEY, team);
     } catch {}
+    confetti({
+      particleCount: 30,
+      spread: 50,
+      origin: { y: 0.8 },
+      colors: team === 'moshe' ? ['#0F3D32', '#2D7A62', '#D4AF37'] : ['#5E1626', '#8C1D36', '#D4AF37']
+    });
   };
 
-  // Calculate percentages (handle 0/0 cleanly)
+  // Percentage calculations for dynamic tug-of-war bar
   const totalPoints = teamScores.moshe + teamScores.priya;
-  const moshePercent = totalPoints > 0 ? Math.round((teamScores.moshe / totalPoints) * 100) : 50;
+  const moshePercent = totalPoints === 0 ? 50 : Math.round((teamScores.moshe / totalPoints) * 100);
   const priyaPercent = 100 - moshePercent;
 
   // ==========================================
@@ -185,65 +176,38 @@ export const WeddingFunGame: React.FC = () => {
   const [gameTimeLeft, setGameTimeLeft] = useState(30);
   const [blessingScore, setBlessingScore] = useState(0);
   const [combo, setCombo] = useState(0);
-  const [thaliX, setThaliX] = useState(50);
-  const [fallingItems, setFallingItems] = useState<FallingItem[]>([]);
   const [highScore, setHighScore] = useState(0);
+  const [thaliX, setThaliX] = useState(50); // percentage 10% to 90%
+  const [fallingItems, setFallingItems] = useState<FallingItem[]>([]);
   const gameAreaRef = useRef<HTMLDivElement>(null);
-  const requestRef = useRef<number>(0);
-  const nextItemIdRef = useRef<number>(1);
-
-  // Audio Chime Synthesizer
-  const playCatchChime = (type: string) => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      let freq = 659.25; // E5
-      if (type === 'ring') freq = 1046.50; // C6
-      if (type === 'rose') freq = 880.00; // A5
-      if (type === 'chilli') freq = 220.00; // A3
-
-      osc.frequency.setValueAtTime(freq, now);
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.3);
-    } catch {}
-  };
+  const nextItemIdRef = useRef(1);
 
   const startTalambraluGame = () => {
-    setGameActive(true);
-    setGameTimeLeft(30);
     setBlessingScore(0);
     setCombo(0);
+    setGameTimeLeft(30);
     setFallingItems([]);
-    nextItemIdRef.current = 1;
+    setThaliX(50);
+    setGameActive(true);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!gameAreaRef.current) return;
+    if (!gameActive || !gameAreaRef.current) return;
     const rect = gameAreaRef.current.getBoundingClientRect();
-    const relativeX = ((e.clientX - rect.left) / rect.width) * 100;
-    const clampedX = Math.max(10, Math.min(90, relativeX));
+    const clientX = e.clientX;
+    const relativeX = ((clientX - rect.left) / rect.width) * 100;
+    const clampedX = Math.max(8, Math.min(92, relativeX));
     setThaliX(clampedX);
   };
 
-  // Keyboard navigation
+  // Keyboard navigation for desktop accessibility
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!gameActive) return;
-      if (e.key === 'ArrowLeft' || e.key === 'a') {
-        setThaliX(prev => Math.max(10, prev - 6));
-      } else if (e.key === 'ArrowRight' || e.key === 'd') {
-        setThaliX(prev => Math.min(90, prev + 6));
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        setThaliX(prev => Math.max(8, prev - 6));
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        setThaliX(prev => Math.min(92, prev + 6));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -351,35 +315,137 @@ export const WeddingFunGame: React.FC = () => {
               });
               setCombo(c => c + 1);
             }
-            continue;
+            continue; // caught!
           }
 
-          if (newY <= 100) {
+          if (newY < 105) {
             nextList.push({ ...item, y: newY });
-          } else {
-            if (item.type !== 'chilli') {
-              setCombo(0);
-            }
           }
         }
         return nextList;
       });
-
-      if (gameActive) {
-        requestRef.current = requestAnimationFrame(updatePhysics);
-      }
     };
 
-    requestRef.current = requestAnimationFrame(updatePhysics);
+    const animInterval = setInterval(updatePhysics, 24);
 
     return () => {
       clearInterval(timerInterval);
-      cancelAnimationFrame(requestRef.current);
+      clearInterval(animInterval);
     };
-  }, [gameActive, thaliX, combo, highScore, blessingScore]);
+  }, [gameActive, thaliX, blessingScore, combo, highScore]);
+
+  const playCatchChime = (type: FallingItem['type']) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'ring') {
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // High sparkle A5
+        osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.15); // A6
+      } else if (type === 'chilli') {
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.12);
+      } else {
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      }
+
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } catch {}
+  };
 
   // ==========================================
-  // GAME 2: KALASHA RING DUEL (BEST OF 3)
+  // GAME 2: VARAMALA SACRED GARLAND TOSS (EDEN GARDEN CHALLENGE)
+  // ==========================================
+  const [varamalaOscillator, setVaramalaOscillator] = useState(50);
+  const [varamalaDir, setVaramalaDir] = useState(1);
+  const [varamalaTossesLeft, setVaramalaTossesLeft] = useState(5);
+  const [varamalaResult, setVaramalaResult] = useState<{ quality: string; pts: number; msg: string } | null>(null);
+  const [varamalaTotalScore, setVaramalaTotalScore] = useState(0);
+  const [varamalaActive, setVaramalaActive] = useState(false);
+  const [isVaramalaComplete, setIsVaramalaComplete] = useState(false);
+
+  useEffect(() => {
+    if (!varamalaActive || isVaramalaComplete) return;
+
+    const interval = setInterval(() => {
+      setVaramalaOscillator(prev => {
+        let next = prev + varamalaDir * 2.2;
+        if (next >= 90) {
+          next = 90;
+          setVaramalaDir(-1);
+        } else if (next <= 10) {
+          next = 10;
+          setVaramalaDir(1);
+        }
+        return next;
+      });
+    }, 20);
+
+    return () => clearInterval(interval);
+  }, [varamalaActive, varamalaDir, isVaramalaComplete]);
+
+  const handleStartVaramala = () => {
+    setVaramalaTossesLeft(5);
+    setVaramalaTotalScore(0);
+    setVaramalaResult(null);
+    setIsVaramalaComplete(false);
+    setVaramalaActive(true);
+  };
+
+  const handleTossGarland = () => {
+    if (!varamalaActive || varamalaTossesLeft <= 0) return;
+
+    // Calculate distance from center (50%)
+    const distFromCenter = Math.abs(varamalaOscillator - 50);
+    let pts = 20;
+    let quality = language === 'te' ? 'శుభమాల!' : 'Nice Toss!';
+    let msg = language === 'te' ? 'సువాసన గల మాల వేదికను అలంకరించింది!' : 'Fragrant jasmine touched the altar.';
+
+    if (distFromCenter < 7) {
+      pts = 100;
+      quality = language === 'te' ? '✨ దివ్యమైన గురి! (బుల్స్‌ఐ)' : '✨ Sacred Bullseye!';
+      msg = language === 'te' ? 'పరిపూర్ణమైన దైవ సంకల్పం! నేరుగా వధూవరుల మెడలో పడింది!' : 'Directly crowned upon the royal couple in perfect love!';
+      confetti({
+        particleCount: 45,
+        spread: 60,
+        origin: { y: 0.65 },
+        colors: ['#0F3D32', '#D4AF37', '#FFF2C4', '#2D7A62']
+      });
+    } else if (distFromCenter < 18) {
+      pts = 50;
+      quality = language === 'te' ? '🌸 అద్భుతమైన విసిరివేత!' : '🌸 Royal Accuracy!';
+      msg = language === 'te' ? 'మాల అందంగా వేదికపై కొలువైంది!' : 'A majestic garland toss onto the holy altar.';
+    }
+
+    addPointsToTeam(pts);
+    setVaramalaTotalScore(prev => prev + pts);
+    setVaramalaResult({ quality, pts, msg });
+
+    setVaramalaTossesLeft(prev => {
+      const next = prev - 1;
+      if (next <= 0) {
+        setIsVaramalaComplete(true);
+        confetti({
+          particleCount: 90,
+          spread: 85,
+          origin: { y: 0.55 }
+        });
+      }
+      return next;
+    });
+  };
+
+  // ==========================================
+  // GAME 3: KALASHA RING DUEL (BEST OF 3)
   // ==========================================
   const [roundNumber, setRoundNumber] = useState<number>(1);
   const [kalashaScores, setKalashaScores] = useState({ moshe: 0, priya: 0 });
@@ -396,11 +462,15 @@ export const WeddingFunGame: React.FC = () => {
     if (isWinner) {
       if (userTeam === 'moshe') {
         setKalashaScores(prev => ({ ...prev, moshe: prev.moshe + 1 }));
-        setRoundOutcome("Moshe Dora's swift instinct found the sacred gold ring! (+50 Pts for Team Moshe 👑)");
+        setRoundOutcome(language === 'te' 
+          ? "మోషే దొర పాల కలశంలో బంగారు ఉంగరాన్ని కనిపెట్టారు! (+50 పాయింట్లు టీమ్ మోషే 👑)"
+          : "Moshe Dora's swift instinct found the sacred gold ring! (+50 Pts for Team Moshe 👑)");
         addPointsToTeam(50, 'moshe');
       } else {
         setKalashaScores(prev => ({ ...prev, priya: prev.priya + 1 }));
-        setRoundOutcome("Nelluri Priya's royal intuition seized the gold ring! (+50 Pts for Team Priya 💐)");
+        setRoundOutcome(language === 'te'
+          ? "నెల్లూరి ప్రియ రాచరిక నైపుణ్యంతో బంగారు ఉంగరాన్ని తీశారు! (+50 పాయింట్లు టీమ్ ప్రియ 💐)"
+          : "Nelluri Priya's royal intuition seized the gold ring! (+50 Pts for Team Priya 💐)");
         addPointsToTeam(50, 'priya');
       }
       confetti({
@@ -412,11 +482,15 @@ export const WeddingFunGame: React.FC = () => {
     } else {
       if (userTeam === 'moshe') {
         setKalashaScores(prev => ({ ...prev, priya: prev.priya + 1 }));
-        setRoundOutcome("Priya gracefully fished out the ring from the other pot! (+50 Pts for Team Priya 🌹)");
+        setRoundOutcome(language === 'te'
+          ? "ప్రియ చక్కగా వేరే కలశం నుండి ఉంగరాన్ని కనిపెట్టారు! (+50 పాయింట్లు టీమ్ ప్రియ 🌹)"
+          : "Priya gracefully fished out the ring from the other pot! (+50 Pts for Team Priya 🌹)");
         addPointsToTeam(50, 'priya');
       } else {
         setKalashaScores(prev => ({ ...prev, moshe: prev.moshe + 1 }));
-        setRoundOutcome("Moshe Dora skillfully discovered the hidden ring! (+50 Pts for Team Moshe 👔)");
+        setRoundOutcome(language === 'te'
+          ? "మోషే దొర సునాయాసంగా ఉంగరాన్ని పట్టుకున్నారు! (+50 పాయింట్లు టీమ్ మోషే 👔)"
+          : "Moshe Dora skillfully discovered the hidden ring! (+50 Pts for Team Moshe 👔)");
         addPointsToTeam(50, 'moshe');
       }
     }
@@ -449,108 +523,30 @@ export const WeddingFunGame: React.FC = () => {
     setKalashaTarget(Math.floor(Math.random() * 3));
   };
 
-  // ==========================================
-  // GAME 3: VARAMALA SACRED GARLAND TOSS (EDEN GARDEN CHALLENGE)
-  // ==========================================
-  const [varamalaOscillator, setVaramalaOscillator] = useState(50);
-  const [varamalaDir, setVaramalaDir] = useState(1);
-  const [varamalaTossesLeft, setVaramalaTossesLeft] = useState(5);
-  const [varamalaResult, setVaramalaResult] = useState<{ quality: string; pts: number; msg: string } | null>(null);
-  const [varamalaTotalScore, setVaramalaTotalScore] = useState(0);
-  const [varamalaActive, setVaramalaActive] = useState(false);
-  const [isVaramalaComplete, setIsVaramalaComplete] = useState(false);
-
-  useEffect(() => {
-    if (!varamalaActive || isVaramalaComplete) return;
-
-    const interval = setInterval(() => {
-      setVaramalaOscillator(prev => {
-        let next = prev + varamalaDir * 2.0;
-        if (next >= 92) {
-          setVaramalaDir(-1);
-          next = 92;
-        } else if (next <= 8) {
-          setVaramalaDir(1);
-          next = 8;
-        }
-        return next;
-      });
-    }, 25);
-
-    return () => clearInterval(interval);
-  }, [varamalaActive, varamalaDir, isVaramalaComplete]);
-
-  const handleStartVaramala = () => {
-    setVaramalaActive(true);
-    setVaramalaTossesLeft(5);
-    setVaramalaResult(null);
-    setVaramalaTotalScore(0);
-    setIsVaramalaComplete(false);
-  };
-
-  const handleTossGarland = () => {
-    if (!varamalaActive || isVaramalaComplete) return;
-
-    const distFromCenter = Math.abs(varamalaOscillator - 50);
-    let pts = 20;
-    let quality = "🌸 Sweet Garden Grace";
-    let msg = "The jasmine garland lands gently with sweet prayer!";
-
-    if (distFromCenter <= 5) {
-      pts = 100;
-      quality = "👑 PERFECT EDEN ARCH TOSS!";
-      msg = "Bullseye! The golden garland crowns the Eden altar in majestic divine harmony!";
-      confetti({
-        particleCount: 60,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#0F3D32', '#D4AF37', '#FFF2C4', '#2D7A62']
-      });
-    } else if (distFromCenter <= 14) {
-      pts = 60;
-      quality = "🌟 Royal Garden Toss!";
-      msg = "Great aim! The fragrant roses grace the Eden altar beautifully.";
-    } else if (distFromCenter <= 25) {
-      pts = 35;
-      quality = "💐 Festive Toss!";
-      msg = "Nice garland toss! The wedding garden erupts in joyful cheers.";
-    }
-
-    addPointsToTeam(pts);
-    setVaramalaTotalScore(prev => prev + pts);
-    setVaramalaResult({ quality, pts, msg });
-
-    setVaramalaTossesLeft(prev => {
-      const next = prev - 1;
-      if (next <= 0) {
-        setIsVaramalaComplete(true);
-        confetti({
-          particleCount: 90,
-          spread: 85,
-          origin: { y: 0.55 }
-        });
-      }
-      return next;
-    });
+  const scrollToGame = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
     <section className="relative py-20 px-4 sm:px-6 bg-[#F4F8F5] border-b border-[#0F3D32]/20" id="game">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto space-y-16">
         
         {/* Section Header */}
         <ScrollReveal direction="up" threshold={0.15}>
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/80 px-4 py-1.5 rounded-full border border-[#D4AF37]/50 shadow-xs">
               <Trees className="w-3.5 h-3.5 text-[#2D7A62]" />
-              Eden Garden Celebrations &bull; Groom vs Bride
+              {language === 'te' ? 'వివాహ వేడుకలు • వరుడు vs వధువు ఛాలెంజ్' : 'Eden Garden Celebrations • Groom vs Bride'}
               <Trees className="w-3.5 h-3.5 text-[#2D7A62]" />
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              Eden Garden Wedding Games
+              {language === 'te' ? 'వివాహ సరదా గేమ్స్ & ఛాలెంజ్' : 'Eden Garden Wedding Games'}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/80 italic max-w-xl mx-auto mt-2">
-              Pick your champion! Every point you score in the games increases the genuine celebration score of <strong className="text-[#0F3D32] not-italic">Team Moshe Dora</strong> or <strong className="text-[#5E1626] not-italic">Team Nelluri Priya</strong>!
+              {language === 'te'
+                ? 'మీ అభిమాన టీమ్‌ను ఎంచుకోండి! మీరు ఆడే ప్రతి గేమ్ పాయింట్లు టీమ్ మోషే లేదా టీమ్ ప్రియ స్కోర్‌ను పెంచుతాయి!'
+                : 'Pick your champion! Every point you score in each game increases the genuine celebration score of Team Moshe Dora or Team Nelluri Priya!'}
             </p>
           </div>
         </ScrollReveal>
@@ -559,20 +555,20 @@ export const WeddingFunGame: React.FC = () => {
             GRAND WEDDING BATTLE SCOREBOARD (100% REAL GUEST SCORES)
            ======================================================== */}
         <ScrollReveal direction="up" delay={60} threshold={0.15}>
-          <div className="mb-10 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FFFDF9] via-[#F2F7F4] to-[#FFFDF9] border-2 border-[#D4AF37] shadow-lg relative overflow-hidden">
+          <div className="p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FFFDF9] via-[#F2F7F4] to-[#FFFDF9] border-2 border-[#D4AF37] shadow-lg relative overflow-hidden">
             
             {/* Top Battle Header */}
             <div className="flex flex-wrap items-center justify-between border-b border-[#0F3D32]/20 pb-3 mb-4 gap-2">
               <div className="flex items-center gap-2">
                 <Crown className="w-4 h-4 text-[#D4AF37]" />
                 <span className="font-cinzel text-xs sm:text-sm font-bold uppercase tracking-wider text-[#0F3D32]">
-                  Eden Garden Championship Battle
+                  {language === 'te' ? 'వరుడు vs వధువు లైవ్ స్కోర్‌బోర్డ్' : 'Eden Garden Championship Battle'}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="font-cinzel text-[11px] text-gray-500 font-semibold">
-                  Total Real Plays: <strong className="text-[#0F3D32]">{teamScores.totalPlays}</strong>
+                  {language === 'te' ? 'మొత్తం ఆటలు:' : 'Total Real Plays:'} <strong className="text-[#0F3D32]">{teamScores.totalPlays}</strong>
                 </span>
               </div>
             </div>
@@ -591,22 +587,22 @@ export const WeddingFunGame: React.FC = () => {
               >
                 {userTeam === 'moshe' && (
                   <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#0F3D32] bg-[#0F3D32]/15 px-2 py-0.5 rounded-full uppercase">
-                    <Check className="w-3 h-3" /> Supporting
+                    <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
                   </span>
                 )}
                 <div className="flex items-center gap-2">
                   <span className="text-2xl sm:text-3xl">👔</span>
                   <div>
                     <div className="font-cinzel text-xs sm:text-sm font-bold text-[#0F3D32] uppercase">
-                      Team Moshe Dora
+                      {language === 'te' ? 'టీమ్ మోషే దొర' : 'Team Moshe Dora'}
                     </div>
                     <div className="font-cormorant text-xs text-gray-600 italic">
-                      The Royal Groom
+                      {language === 'te' ? 'వరుడు' : 'The Royal Groom'}
                     </div>
                   </div>
                 </div>
                 <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#0F3D32] mt-2">
-                  {teamScores.moshe.toLocaleString()} <span className="text-xs font-normal text-gray-500">pts</span>
+                  {teamScores.moshe.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
                 </div>
               </button>
 
@@ -622,22 +618,22 @@ export const WeddingFunGame: React.FC = () => {
               >
                 {userTeam === 'priya' && (
                   <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] sm:text-[10px] font-cinzel font-bold text-[#5E1626] bg-[#5E1626]/15 px-2 py-0.5 rounded-full uppercase">
-                    <Check className="w-3 h-3" /> Supporting
+                    <Check className="w-3 h-3" /> {language === 'te' ? 'సపోర్ట్' : 'Supporting'}
                   </span>
                 )}
                 <div className="flex items-center gap-2">
                   <span className="text-2xl sm:text-3xl">💐</span>
                   <div>
                     <div className="font-cinzel text-xs sm:text-sm font-bold text-[#5E1626] uppercase">
-                      Team Nelluri Priya
+                      {language === 'te' ? 'టీమ్ నెల్లూరి ప్రియ' : 'Team Nelluri Priya'}
                     </div>
                     <div className="font-cormorant text-xs text-gray-600 italic">
-                      The Radiant Bride
+                      {language === 'te' ? 'వధువు' : 'The Radiant Bride'}
                     </div>
                   </div>
                 </div>
                 <div className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#5E1626] mt-2">
-                  {teamScores.priya.toLocaleString()} <span className="text-xs font-normal text-gray-500">pts</span>
+                  {teamScores.priya.toLocaleString()} <span className="text-xs font-normal text-gray-500">{language === 'te' ? 'పాయింట్లు' : 'pts'}</span>
                 </div>
               </button>
             </div>
@@ -646,7 +642,7 @@ export const WeddingFunGame: React.FC = () => {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs font-cinzel font-bold">
                 <span className="text-[#0F3D32]">Moshe: {moshePercent}%</span>
-                <span className="text-gray-400 font-cormorant italic">Select a team to contribute your game points</span>
+                <span className="text-gray-400 font-cormorant italic">{language === 'te' ? 'పాయింట్లు జోడించడానికి టీమ్‌ని ఎంచుకోండి' : 'Select a team to contribute your game points'}</span>
                 <span className="text-[#5E1626]">Priya: {priyaPercent}%</span>
               </div>
               <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden flex border border-[#0F3D32]/30 shadow-inner">
@@ -666,69 +662,67 @@ export const WeddingFunGame: React.FC = () => {
               <div className="mt-3 text-center animate-bounce">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-xs font-bold shadow-md border border-[#D4AF37]">
                   <Zap className="w-3.5 h-3.5 fill-current text-[#D4AF37]" />
-                  <span>+{recentPointFlyout.pts} Points Added to Team {recentPointFlyout.team === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐'}!</span>
+                  <span>+{recentPointFlyout.pts} {language === 'te' ? 'పాయింట్లు జోడించబడ్డాయి:' : 'Points Added to'} Team {recentPointFlyout.team === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐'}!</span>
                 </span>
               </div>
             )}
-          </div>
-        </ScrollReveal>
 
-        {/* Game Navigation Switcher */}
-        <ScrollReveal direction="up" delay={80} threshold={0.15}>
-          <div className="flex justify-center mb-8">
-            <div className="inline-flex p-1.5 rounded-2xl bg-white border border-[#0F3D32]/30 shadow-sm max-w-full overflow-x-auto gap-1">
+            {/* Quick Jumps to Games */}
+            <div className="mt-4 pt-3 border-t border-[#D4AF37]/30 flex flex-wrap items-center justify-center gap-2 text-xs font-cinzel">
+              <span className="text-gray-500 font-semibold">{language === 'te' ? 'ఆటల జాబితా:' : 'Jump to Game:'}</span>
               <button
                 type="button"
-                onClick={() => setActiveGame('talambralu')}
-                className={`px-4 sm:px-6 py-2.5 rounded-xl font-cinzel text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                  activeGame === 'talambralu'
-                    ? 'bg-[#0F3D32] text-[#F1DFA6] shadow-md'
-                    : 'text-[#2A2A2A]/70 hover:text-[#0F3D32] hover:bg-[#F2F7F4]'
-                }`}
+                onClick={() => scrollToGame('game-talambralu')}
+                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
               >
-                <span>🌸 Talambralu Catch</span>
+                🌸 1. {language === 'te' ? 'తలంబ్రాల క్యాచ్' : 'Talambralu Catch'}
               </button>
-
               <button
                 type="button"
-                onClick={() => setActiveGame('varamala')}
-                className={`px-4 sm:px-6 py-2.5 rounded-xl font-cinzel text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                  activeGame === 'varamala'
-                    ? 'bg-[#0F3D32] text-[#F1DFA6] shadow-md'
-                    : 'text-[#2A2A2A]/70 hover:text-[#0F3D32] hover:bg-[#F2F7F4]'
-                }`}
+                onClick={() => scrollToGame('game-varamala')}
+                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
               >
-                <span>💐 Varamala Garland Toss</span>
+                💐 2. {language === 'te' ? 'వరమాల విసిరే ఛాలెంజ్' : 'Varamala Toss'}
               </button>
-
               <button
                 type="button"
-                onClick={() => setActiveGame('kalasha')}
-                className={`px-4 sm:px-6 py-2.5 rounded-xl font-cinzel text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                  activeGame === 'kalasha'
-                    ? 'bg-[#0F3D32] text-[#F1DFA6] shadow-md'
-                    : 'text-[#2A2A2A]/70 hover:text-[#0F3D32] hover:bg-[#F2F7F4]'
-                }`}
+                onClick={() => scrollToGame('game-kalasha')}
+                className="px-3 py-1 rounded-full bg-white border border-[#0F3D32]/30 text-[#0F3D32] hover:bg-[#0F3D32] hover:text-[#F1DFA6] transition-all cursor-pointer font-bold shadow-2xs"
               >
-                <span>🏺 Kalasha Ring Duel</span>
+                🏺 3. {language === 'te' ? 'కలశం ఉంగరం ఆట' : 'Kalasha Ring Quest'}
               </button>
             </div>
+
           </div>
         </ScrollReveal>
 
         {/* ========================================================
-            GAME 1: TALAMBRALU BLESSING CATCHER (SLOWER & GENTLE)
+            GAME 1: TALAMBRALU BLESSING CATCHER (SEPARATED CARD)
            ======================================================== */}
-        {activeGame === 'talambralu' && (
-          <ScrollReveal direction="scale" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-4 sm:p-8 shadow-lg relative overflow-hidden">
+        <div id="game-talambralu" className="scroll-mt-24">
+          <ScrollReveal direction="up" threshold={0.1}>
+            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-4 sm:p-8 shadow-xl relative overflow-hidden">
               
-              {/* Score & HUD Header */}
+              {/* Badge & Game Title Header */}
               <div className="flex flex-wrap items-center justify-between border-b border-[#0F3D32]/20 pb-4 mb-4 gap-2">
-                <div className="flex items-center gap-3">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
+                    <span>🎮 {language === 'te' ? 'ఆట 01' : 'Game 01'}</span>
+                  </div>
+                  <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
+                    🌸 {language === 'te' ? 'తలంబ్రాల ముత్యాల క్యాచ్' : 'Talambralu Sacred Pearl Catch'}
+                  </h3>
+                  <p className="font-cormorant text-sm sm:text-base text-[#2A2A2A]/80 italic">
+                    {language === 'te'
+                      ? 'బంగారు తాంబూల తట్టను నడిపిస్తూ కురుస్తున్న పవిత్ర ముత్యాలు (🌟), మల్లెలు (🌸), గులాబీలు (🌹) & ఉంగరాలు (💍) పట్టుకోండి!'
+                      : 'Glide the royal thali plate to catch falling pearls (🌟), jasmines (🌸), roses (🌹) & rings (💍)! Avoid chillies (🌶️).'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F3D32]/10 text-[#0F3D32] font-cinzel text-xs font-bold uppercase">
                     <Trophy className="w-3.5 h-3.5 text-[#D4AF37]" />
-                    <span>Session Points: {blessingScore}</span>
+                    <span>{language === 'te' ? 'పాయింట్లు:' : 'Score:'} {blessingScore}</span>
                   </div>
 
                   {combo > 2 && (
@@ -737,12 +731,6 @@ export const WeddingFunGame: React.FC = () => {
                       <span>{combo}x Combo!</span>
                     </div>
                   )}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="font-cinzel text-xs font-bold text-gray-500">
-                    Supporting: <span className={userTeam === 'moshe' ? 'text-[#0F3D32]' : 'text-[#5E1626]'}>Team {userTeam === 'moshe' ? 'Moshe' : 'Priya'}</span>
-                  </div>
 
                   <div className={`px-3 py-1 rounded-full font-cinzel text-xs font-bold ${
                     gameTimeLeft <= 5 ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-[#0F3D32]/10 text-[#0F3D32]'
@@ -762,7 +750,7 @@ export const WeddingFunGame: React.FC = () => {
                 <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#0F3D32_1px,transparent_1px)] [background-size:20px_20px]" />
                 <div className="absolute top-2 left-0 right-0 text-center pointer-events-none">
                   <span className="font-cormorant italic text-xs text-[#0F3D32]/60 uppercase tracking-widest">
-                    Relaxed Eden Blessing Shower &bull; Catch Pearls, Jasmine &amp; Rings &bull; Avoid Chillies
+                    {language === 'te' ? 'మౌస్ లేదా టచ్ ద్వారా తట్టను కదపండి' : 'Move cursor or swipe touch to glide the sacred thali'}
                   </span>
                 </div>
 
@@ -788,7 +776,7 @@ export const WeddingFunGame: React.FC = () => {
                   <div className="w-24 sm:w-28 h-7 sm:h-8 rounded-full bg-gradient-to-b from-[#FFF2C4] via-[#D4AF37] to-[#8C6212] border-2 border-[#FFFDF9] shadow-[0_6px_16px_rgba(0,0,0,0.35)] flex items-center justify-center relative">
                     <div className="absolute inset-1 rounded-full border border-dashed border-[#0F3D32]/40" />
                     <span className="font-cinzel text-[9px] font-bold text-[#061C16] uppercase tracking-wider">
-                      ✨ Thali
+                      ✨ {language === 'te' ? 'తాంబూలం' : 'Thali'}
                     </span>
                   </div>
                   <div className="w-12 h-2 bg-black/20 rounded-full blur-[2px] mt-0.5" />
@@ -796,28 +784,30 @@ export const WeddingFunGame: React.FC = () => {
 
                 {/* Overlay when game is idle / game over */}
                 {!gameActive && (
-                  <div className="absolute inset-0 bg-[#061C16]/60 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center z-30">
+                  <div className="absolute inset-0 bg-[#061C16]/65 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center z-30">
                     {blessingScore > 0 ? (
                       <div className="space-y-3 animate-fadeIn">
                         <div className="text-4xl">🎊</div>
-                        <h3 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
-                          Eden Blessing Shower Complete!
-                        </h3>
+                        <h4 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
+                          {language === 'te' ? 'తలంబ్రాల ఆట పూర్తయింది!' : 'Eden Blessing Shower Complete!'}
+                        </h4>
                         <p className="font-cinzel text-base text-[#F1DFA6] font-bold">
-                          +{blessingScore} Points Contributed To Team {userTeam === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐'}!
+                          +{blessingScore} {language === 'te' ? 'పాయింట్లు' : 'Points'} &bull; Team {userTeam === 'moshe' ? 'Moshe Dora 👔' : 'Nelluri Priya 💐'}!
                         </p>
                         <p className="font-cormorant text-sm text-[#FFFDF9]/90 italic max-w-sm">
-                          Your points are recorded and will display on the celebration leaderboard!
+                          {language === 'te' ? 'మీ పాయింట్లు స్కోర్‌బోర్డ్‌లో విజయవంతంగా చేర్చబడ్డాయి!' : 'Your points have been recorded to the live wedding leaderboard!'}
                         </p>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <div className="text-4xl animate-bounce">🌸</div>
-                        <h3 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
-                          Talambralu Blessing Catcher
-                        </h3>
+                        <h4 className="font-decorative text-2xl sm:text-3xl font-bold text-[#FFF2C4]">
+                          {language === 'te' ? 'తలంబ్రాల ముత్యాల క్యాచ్' : 'Talambralu Blessing Catcher'}
+                        </h4>
                         <p className="font-cormorant text-sm sm:text-base text-[#F1DFA6] italic max-w-md">
-                          Glide the sacred thali gently to catch falling golden akshintalu pearls (🌟), jasmine (🌸), roses (🌹) &amp; gold rings (💍).
+                          {language === 'te' 
+                            ? '30 సెకన్ల వ్యవధిలో పడే ముత్యాలు, మల్లెలు మరియు ఉంగరాలను పట్టుకుని పాయింట్లు సంపాదించండి.'
+                            : 'Catch falling golden pearls, jasmines, roses and sacred rings to score high for your team!'}
                         </p>
                       </div>
                     )}
@@ -828,7 +818,7 @@ export const WeddingFunGame: React.FC = () => {
                       className="mt-5 px-8 py-3 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 text-[#FFF2C4] font-cinzel text-xs sm:text-sm font-bold uppercase tracking-[0.2em] border-2 border-[#D4AF37] shadow-xl flex items-center gap-2 cursor-pointer transition-all"
                     >
                       <Play className="w-4 h-4 fill-current text-[#D4AF37]" />
-                      <span>{blessingScore > 0 ? "Play Again (30s)" : "Start Blessing Shower"}</span>
+                      <span>{blessingScore > 0 ? (language === 'te' ? "మళ్లీ ఆడండి (30s)" : "Play Again (30s)") : (language === 'te' ? "ఆట ప్రారంభించండి" : "Start Pearl Catch Game")}</span>
                     </button>
                   </div>
                 )}
@@ -842,38 +832,39 @@ export const WeddingFunGame: React.FC = () => {
                     onClick={() => setThaliX(prev => Math.max(10, prev - 15))}
                     className="flex-1 py-2 rounded-xl bg-[#0F3D32]/15 text-[#0F3D32] font-cinzel text-xs font-bold uppercase"
                   >
-                    ⬅️ Move Left
+                    ⬅️ {language === 'te' ? 'ఎడమ' : 'Left'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setThaliX(prev => Math.min(90, prev + 15))}
                     className="flex-1 py-2 rounded-xl bg-[#0F3D32]/15 text-[#0F3D32] font-cinzel text-xs font-bold uppercase"
                   >
-                    Move Right ➡️
+                    {language === 'te' ? 'కుడి' : 'Right'} ➡️
                   </button>
                 </div>
               )}
             </div>
           </ScrollReveal>
-        )}
+        </div>
 
         {/* ========================================================
-            GAME 2: VARAMALA SACRED GARLAND TOSS
+            GAME 2: VARAMALA SACRED GARLAND TOSS (SEPARATED CARD)
            ======================================================== */}
-        {activeGame === 'varamala' && (
-          <ScrollReveal direction="scale" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-lg text-center">
+        <div id="game-varamala" className="scroll-mt-24">
+          <ScrollReveal direction="up" threshold={0.1}>
+            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-xl text-center">
               
-              <div className="max-w-md mx-auto mb-6">
-                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32]/10 text-[#0F3D32] font-cinzel text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full mb-2">
-                  <Target className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  Varamala Exchange Timing Challenge
+              <div className="max-w-xl mx-auto mb-6">
+                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
+                  <span>🎯 {language === 'te' ? 'ఆట 02' : 'Game 02'}</span>
                 </div>
                 <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
-                  Sacred Garland Toss Challenge
+                  💐 {language === 'te' ? 'వరమాల విసిరే ఛాలెంజ్' : 'Sacred Garland Toss Challenge'}
                 </h3>
                 <p className="font-cormorant text-base text-[#2A2A2A]/80 italic mt-1">
-                  Time your toss to land the fragrant jasmine &amp; rose garland onto the ceremonial Eden arch! Hit the golden center for maximum points for Team {userTeam === 'moshe' ? 'Moshe' : 'Priya'}!
+                  {language === 'te'
+                    ? 'సువాసన గల మల్లెలు మరియు గులాబీల మాలను సరైన సమయంలో వేదికపైకి విసరండి! బంగారు కేంద్రంలో పడితే 100 పాయింట్లు లభిస్తాయి!'
+                    : 'Time your toss to land the fragrant jasmine & rose garland onto the ceremonial altar! Hit the golden center for 100 points!'}
                 </p>
               </div>
 
@@ -891,7 +882,7 @@ export const WeddingFunGame: React.FC = () => {
                       <span className="absolute -top-3 right-1 text-base">🌸</span>
                     </div>
                     <div className="text-[10px] font-cinzel font-bold text-[#0F3D32] uppercase mt-1">
-                      Eden Garden Altar
+                      {language === 'te' ? 'పరిశుద్ధ వివాహ వేదిక' : 'Holy Altar Target'}
                     </div>
                   </div>
 
@@ -904,7 +895,7 @@ export const WeddingFunGame: React.FC = () => {
                       {/* Sweet Spot Golden Center */}
                       <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500 flex items-center justify-center">
                         <span className="text-[9px] font-cinzel font-extrabold text-emerald-950 uppercase tracking-widest">
-                          ✨ Bullseye (100 Pts)
+                          ✨ {language === 'te' ? 'బుల్స్‌ఐ (100 Pts)' : 'Bullseye (100 Pts)'}
                         </span>
                       </div>
                       {/* Right zone */}
@@ -945,7 +936,7 @@ export const WeddingFunGame: React.FC = () => {
                     className="px-8 py-3 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 text-[#FFF2C4] font-cinzel text-xs sm:text-sm font-bold uppercase tracking-[0.2em] border-2 border-[#D4AF37] shadow-xl flex items-center gap-2 cursor-pointer transition-all"
                   >
                     <Play className="w-4 h-4 fill-current text-[#D4AF37]" />
-                    <span>{isVaramalaComplete ? "Toss Again (5 Rounds)" : "Start Garland Toss Challenge"}</span>
+                    <span>{isVaramalaComplete ? (language === 'te' ? "మళ్లీ విసరండి (5 రౌండ్లు)" : "Toss Again (5 Rounds)") : (language === 'te' ? "వరమాల ఛాలెంజ్ ప్రారంభించండి" : "Start Garland Toss Challenge")}</span>
                   </button>
                 ) : (
                   <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -954,42 +945,43 @@ export const WeddingFunGame: React.FC = () => {
                       onClick={handleTossGarland}
                       className="px-10 py-4 rounded-full bg-gradient-to-r from-[#0F3D32] via-[#2D7A62] to-[#0F3D32] hover:scale-105 active:scale-95 text-[#FFF2C4] font-cinzel text-sm sm:text-base font-extrabold uppercase tracking-[0.22em] border-2 border-[#D4AF37] shadow-2xl flex items-center gap-2 cursor-pointer transition-all animate-pulse"
                     >
-                      <span>💐 TOSS GARLAND NOW!</span>
+                      <span>💐 {language === 'te' ? 'ఇప్పుడే మాల విసరండి!' : 'TOSS GARLAND NOW!'}</span>
                     </button>
                     <div className="font-cinzel text-xs font-bold text-gray-600">
-                      Tosses Remaining: <span className="text-[#0F3D32] text-base font-bold">{varamalaTossesLeft}</span> / 5
+                      {language === 'te' ? 'మిగిలిన విసిరివేతలు:' : 'Tosses Remaining:'} <span className="text-[#0F3D32] text-base font-bold">{varamalaTossesLeft}</span> / 5
                     </div>
                   </div>
                 )}
 
                 {varamalaTotalScore > 0 && (
                   <div className="text-xs font-cinzel text-[#0F3D32] font-semibold">
-                    Session Score: <strong>+{varamalaTotalScore} pts</strong> contributed to Team {userTeam === 'moshe' ? 'Moshe' : 'Priya'}!
+                    {language === 'te' ? 'మొత్తం స్కోర్:' : 'Session Score:'} <strong>+{varamalaTotalScore} pts</strong> &bull; Team {userTeam === 'moshe' ? 'Moshe' : 'Priya'}!
                   </div>
                 )}
               </div>
 
             </div>
           </ScrollReveal>
-        )}
+        </div>
 
         {/* ========================================================
-            GAME 3: SACRED KALASHA RING DUEL (BEST OF 3)
+            GAME 3: SACRED KALASHA RING DUEL (SEPARATED CARD)
            ======================================================== */}
-        {activeGame === 'kalasha' && (
-          <ScrollReveal direction="scale" threshold={0.1}>
-            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-lg text-center">
+        <div id="game-kalasha" className="scroll-mt-24">
+          <ScrollReveal direction="up" threshold={0.1}>
+            <div className="bg-[#FFFDF9] rounded-3xl border-2 border-[#0F3D32]/40 p-6 sm:p-10 shadow-xl text-center">
               
-              <div className="max-w-md mx-auto mb-6">
-                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32]/10 text-[#0F3D32] font-cinzel text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full mb-2">
-                  <Award className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  Sacred Talambralu Tradition &bull; Best of 3
+              <div className="max-w-xl mx-auto mb-6">
+                <div className="inline-flex items-center gap-1.5 bg-[#0F3D32] text-[#F1DFA6] font-cinzel text-[10px] sm:text-xs font-bold uppercase tracking-wider px-3 py-0.5 rounded-full mb-1">
+                  <span>🏺 {language === 'te' ? 'ఆట 03' : 'Game 03'}</span>
                 </div>
                 <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold">
-                  The Golden Kalasha Ring Quest
+                  🏺 {language === 'te' ? 'బంగారు కలశం ఉంగరం ఆట' : 'The Golden Kalasha Ring Quest'}
                 </h3>
                 <p className="font-cormorant text-base text-[#2A2A2A]/80 italic mt-1">
-                  At the wedding altar, a consecrated gold ring is slipped into a brass pot filled with milk &amp; fresh rose petals. Find the ring to win points for your team!
+                  {language === 'te'
+                    ? 'పాల కలశంలో దాగి ఉన్న పవిత్ర బంగారు ఉంగరాన్ని కనిపెట్టండి! 3 రౌండ్లలో ఎవరు ఎక్కువసార్లు ఉంగరాన్ని కనిపెడతారో చూద్దాం!'
+                    : 'A consecrated gold ring is slipped into one of the three milk & rose petal pots. Guess the right pot to win points! (Best of 3)'}
                 </p>
               </div>
 
@@ -997,21 +989,21 @@ export const WeddingFunGame: React.FC = () => {
               <div className="grid grid-cols-2 gap-4 max-w-md mx-auto mb-6">
                 <div className={`p-3 rounded-2xl border-2 text-center ${userTeam === 'moshe' ? 'border-[#0F3D32] bg-[#0F3D32]/10' : 'border-gray-200'}`}>
                   <div className="text-xl">👔</div>
-                  <div className="font-cinzel text-xs font-bold text-[#0F3D32]">Moshe Dora</div>
-                  <div className="font-cinzel text-xl font-bold text-[#0F3D32]">{kalashaScores.moshe} Wins</div>
+                  <div className="font-cinzel text-xs font-bold text-[#0F3D32]">{language === 'te' ? 'మోషే దొర' : 'Moshe Dora'}</div>
+                  <div className="font-cinzel text-xl font-bold text-[#0F3D32]">{kalashaScores.moshe} {language === 'te' ? 'విజయాలు' : 'Wins'}</div>
                 </div>
 
                 <div className={`p-3 rounded-2xl border-2 text-center ${userTeam === 'priya' ? 'border-[#5E1626] bg-[#5E1626]/10' : 'border-gray-200'}`}>
                   <div className="text-xl">💐</div>
-                  <div className="font-cinzel text-xs font-bold text-[#5E1626]">Nelluri Priya</div>
-                  <div className="font-cinzel text-xl font-bold text-[#5E1626]">{kalashaScores.priya} Wins</div>
+                  <div className="font-cinzel text-xs font-bold text-[#5E1626]">{language === 'te' ? 'నెల్లూరి ప్రియ' : 'Nelluri Priya'}</div>
+                  <div className="font-cinzel text-xl font-bold text-[#5E1626]">{kalashaScores.priya} {language === 'te' ? 'విజయాలు' : 'Wins'}</div>
                 </div>
               </div>
 
               {/* Round Indicator */}
               {!isMatchOver && (
                 <div className="font-cinzel text-xs font-bold text-[#0F3D32] uppercase tracking-wider mb-4">
-                  Round {roundNumber} of 3 &bull; Select a Milk &amp; Rose Kalasha
+                  {language === 'te' ? `రౌండ్ ${roundNumber} / 3 • ఒక కలశాన్ని ఎంచుకోండి` : `Round ${roundNumber} of 3 • Select a Milk & Rose Kalasha`}
                 </div>
               )}
 
@@ -1056,10 +1048,12 @@ export const WeddingFunGame: React.FC = () => {
                         </div>
 
                         <div className="font-cinzel text-xs font-bold text-[#0F3D32] uppercase tracking-wider mt-2">
-                          Kalasha #{idx + 1}
+                          {language === 'te' ? `కలశం #${idx + 1}` : `Kalasha #${idx + 1}`}
                         </div>
                         <div className="text-[11px] font-cormorant text-gray-500 italic">
-                          {isRevealed && hasRing ? "Gold Ring Found!" : "Milk & Rose Petals"}
+                          {isRevealed && hasRing 
+                            ? (language === 'te' ? "ఉంగరం దొరికింది!" : "Gold Ring Found!") 
+                            : (language === 'te' ? "పాల గులాబీ దళాలు" : "Milk & Rose Petals")}
                         </div>
                       </button>
                     );
@@ -1078,7 +1072,9 @@ export const WeddingFunGame: React.FC = () => {
                     onClick={handleNextRound}
                     className="mt-3 px-6 py-2 rounded-full bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer"
                   >
-                    {roundNumber >= 3 ? "View Tournament Outcome 👑" : "Proceed to Next Round ➡️"}
+                    {roundNumber >= 3 
+                      ? (language === 'te' ? "ఫలితాలు చూడండి 👑" : "View Tournament Outcome 👑") 
+                      : (language === 'te' ? "తదుపరి రౌండ్‌కు వెళ్లండి ➡️" : "Proceed to Next Round ➡️")}
                   </button>
                 </div>
               )}
@@ -1091,17 +1087,17 @@ export const WeddingFunGame: React.FC = () => {
                   </div>
                   <h4 className="font-decorative text-2xl text-[#0F3D32] font-bold">
                     {kalashaScores.moshe > kalashaScores.priya
-                      ? "Moshe Dora Wins The Golden Ring Quest! (+100 Pts)"
+                      ? (language === 'te' ? "మోషే దొర బంగారు ఉంగరాల విజేత! (+100 Pts)" : "Moshe Dora Wins The Golden Ring Quest! (+100 Pts)")
                       : kalashaScores.priya > kalashaScores.moshe
-                      ? "Nelluri Priya Conquers The Royal Kalasha! (+100 Pts)"
-                      : "A Divine Holy Tie &bull; Perfect Biblical Equality!"}
+                      ? (language === 'te' ? "నెల్లూరి ప్రియ రాచరిక కలశ విజేత! (+100 Pts)" : "Nelluri Priya Conquers The Royal Kalasha! (+100 Pts)")
+                      : (language === 'te' ? "ఇరువైపులా సమాన విజయం • పరిపూర్ణ దైవ బంధం!" : "A Divine Holy Tie • Perfect Biblical Equality!")}
                   </h4>
                   <p className="font-cormorant text-base text-[#2A2A2A] italic mt-2 leading-relaxed">
                     {kalashaScores.moshe > kalashaScores.priya
-                      ? "Tradition says Moshe Dora gets supreme authority over Sunday road-trip music playlists!"
+                      ? (language === 'te' ? "వివాహ సంప్రదాయం ప్రకారం ప్రయాణాలలో సంగీతాన్ని ఎంచుకునే హక్కు మోషే దొర గారిది!" : "Tradition says Moshe Dora gets supreme authority over Sunday road-trip music playlists!")
                       : kalashaScores.priya > kalashaScores.moshe
-                      ? "Tradition decrees that Priya gets executive power over all holiday destinations & wedding shopping!"
-                      : "Two hearts beating as one in God's Eden garden — blessed with laughter and mutual respect!"}
+                      ? (language === 'te' ? "సంప్రదాయం ప్రకారం షాపింగ్ మరియు విహారయాత్రలను నిర్ణయించే అధికారం ప్రియ గారిది!" : "Tradition decrees that Priya gets executive power over all holiday destinations & wedding shopping!")
+                      : (language === 'te' ? "దేవుని సన్నిధిలో ఏకమైన ఇద్దరు వ్యక్తులు — ఆనందం, పరస్పర గౌరవంతో ఆశీర్వదించబడ్డారు!" : "Two hearts beating as one in God's Eden garden — blessed with laughter and mutual respect!")}
                   </p>
 
                   <button
@@ -1110,13 +1106,13 @@ export const WeddingFunGame: React.FC = () => {
                     className="mt-5 px-6 py-2.5 rounded-full bg-[#0F3D32] hover:bg-[#2D7A62] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow cursor-pointer inline-flex items-center gap-2"
                   >
                     <RotateCw className="w-3.5 h-3.5" />
-                    <span>Play Another Duel</span>
+                    <span>{language === 'te' ? 'మరో మ్యాచ్ ఆడండి' : 'Play Another Duel'}</span>
                   </button>
                 </div>
               )}
             </div>
           </ScrollReveal>
-        )}
+        </div>
 
       </div>
     </section>

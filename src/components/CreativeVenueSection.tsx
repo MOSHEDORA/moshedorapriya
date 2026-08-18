@@ -14,11 +14,15 @@ import {
 } from 'lucide-react';
 import { venueInfo } from '../data/weddingData';
 import { ScrollReveal } from './ScrollReveal';
+import { useLanguage } from '../context/LanguageContext';
 
 export const CreativeVenueSection: React.FC = () => {
   const [copied, setCopied] = useState(false);
+  const { language, t } = useLanguage();
 
-  const fullAddress = `${venueInfo.name}, ${venueInfo.hallName}, ${venueInfo.addressLine1}, ${venueInfo.city}, ${venueInfo.state} - ${venueInfo.pincode}`;
+  const fullAddress = language === 'te'
+    ? `వేదిక ఫంక్షన్ హాల్, గ్రాండ్ ఏసీ ఆడిటోరియం, మెయిన్ రోడ్, ఏలేశ్వరం మండలం, ఆంధ్రప్రదేశ్ 533429`
+    : `${venueInfo.name}, ${venueInfo.hallName}, ${venueInfo.addressLine1}, ${venueInfo.city}, ${venueInfo.state} - ${venueInfo.pincode}`;
 
   const handleCopyAddress = () => {
     navigator.clipboard.writeText(fullAddress);
@@ -28,12 +32,19 @@ export const CreativeVenueSection: React.FC = () => {
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
-      `💍 Wedding Venue & Date Details:\n👰 Bride: Nelluri Priya & 🤵 Groom: Velnati Moshe Dora\n📅 Date: Thursday, September 03, 2026 at 10:00 AM IST\n📍 Venue: Vedika Function Hall, Yeleswaram\n\nGoogle Maps Navigation: https://maps.app.goo.gl/gLeSdH2zKB5729Lb6`
+      language === 'te'
+        ? `💍 వివాహ వేదిక & ముహూర్తం:\n👰 వధువు: నెల్లూరి ప్రియ & 🤵 వరుడు: వేల్నాటి మోషే దొర\n📅 ముహూర్తం: గురువారం, సెప్టెంబర్ 03, 2026 ఉదయం 10:00 గంటలకు\n📍 వేదిక: వేదిక ఫంక్షన్ హాల్, ఏలేశ్వరం\n\nగూగుల్ మ్యాప్స్ దారి: https://maps.app.goo.gl/gLeSdH2zKB5729Lb6`
+        : `💍 Wedding Venue & Date Details:\n👰 Bride: Nelluri Priya & 🤵 Groom: Velnati Moshe Dora\n📅 Date: Thursday, September 03, 2026 at 10:00 AM IST\n📍 Venue: Vedika Function Hall, Yeleswaram\n\nGoogle Maps Navigation: https://maps.app.goo.gl/gLeSdH2zKB5729Lb6`
     );
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };
 
-  const transitHubs = [
+  const transitHubs = language === 'te' ? [
+    { icon: Train, name: "సామర్లకోట జంక్షన్ (SLO)", dist: "32 కి.మీ · 40 నిమిషాలు", desc: "ప్రధాన రైల్వే జంక్షన్" },
+    { icon: Plane, name: "రాజమండ్రి విమానాశ్రయం (RJA)", dist: "62 కి.మీ · 1 గం. 15 ని.", desc: "విమాన ప్రయాణ కేంద్రం" },
+    { icon: Car, name: "NH-16 కత్తిపూడి జంక్షన్", dist: "18 కి.మీ · 20 నిమిషాలు", desc: "4 లైన్ల జాతీయ రహదారి" },
+    { icon: Train, name: "తుని రైల్వే స్టేషన్ (TUNI)", dist: "38 కి.మీ · 45 నిమిషాలు", desc: "రైల్వే లింక్" }
+  ] : [
     { icon: Train, name: "Samalkot Junction (SLO)", dist: "32 km · 40 mins", desc: "Main express railway junction" },
     { icon: Plane, name: "Rajahmundry Airport (RJA)", dist: "62 km · 1 hr 15 mins", desc: "Commercial flights from metro hubs" },
     { icon: Car, name: "NH-16 Kathipudi Corridor", dist: "18 km · 20 mins", desc: "4-lane highway into Yeleswaram" },
@@ -61,14 +72,16 @@ export const CreativeVenueSection: React.FC = () => {
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/90 px-5 py-2 rounded-full border border-[#D4AF37]/60 shadow-sm">
               <span className="text-sm">🌿</span>
-              <span>Wedding Venue &amp; Location Guide</span>
+              <span>{t('venue.badge')}</span>
               <span className="text-sm">🌿</span>
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              Place &amp; Location Map
+              {language === 'te' ? 'వివాహ వేదిక & స్థల వివరణ' : 'Place & Location Map'}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/85 italic max-w-2xl mx-auto mt-2">
-              Join us at Vedika Function Hall in Yeleswaram for this blessed matrimonial covenant.
+              {language === 'te' 
+                ? 'ఏలేశ్వరం వేదిక ఫంక్షన్ హాల్ వద్ద జరిగే పరిశుద్ధ వివాహ మహోత్సవానికి విచ్చేసి వధూవరులను ఆశీర్వదించండి.' 
+                : 'Join us at Vedika Function Hall in Yeleswaram for this blessed matrimonial covenant.'}
             </p>
           </div>
         </ScrollReveal>
@@ -82,15 +95,15 @@ export const CreativeVenueSection: React.FC = () => {
               <div className="bg-gradient-to-r from-[#FBF6EC] via-[#FFFDF9] to-[#FBF6EC] rounded-2xl border-2 border-[#D4AF37] gold-box-shadow p-6 sm:p-7 shadow-xl">
                 <div className="inline-flex items-center gap-1.5 font-cinzel text-xs uppercase tracking-widest text-[#996515] font-bold">
                   <Sparkles className="w-3.5 h-3.5 text-[#C59B27]" />
-                  <span>Grand A/C Auditorium &amp; Dining Hall</span>
+                  <span>{language === 'te' ? 'గ్రాండ్ ఏసీ ఆడిటోరియం & భోజన శాల' : 'Grand A/C Auditorium & Dining Hall'}</span>
                 </div>
                 
                 <h3 className="font-decorative text-2xl sm:text-3xl text-[#0F3D32] font-bold mt-1">
-                  {venueInfo.name}
+                  {t('venue.title')}
                 </h3>
                 
                 <p className="font-cormorant text-base sm:text-lg text-[#2A2A2A] mt-1 font-medium leading-relaxed">
-                  {venueInfo.hallName} · {venueInfo.addressLine1}, {venueInfo.city}, {venueInfo.state} - {venueInfo.pincode}
+                  {t('venue.address')}
                 </p>
 
                 {/* Primary Action Buttons */}
@@ -102,7 +115,7 @@ export const CreativeVenueSection: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-gradient-to-r from-[#D4AF37] via-[#C59B27] to-[#996515] text-[#2b2205] font-cinzel text-xs font-bold uppercase tracking-wider hover:shadow-lg transition-all shadow-md"
                   >
                     <Navigation className="w-3.5 h-3.5 fill-current" />
-                    <span>Open Google Maps</span>
+                    <span>{t('venue.openMaps')}</span>
                     <ExternalLink className="w-3 h-3 ml-0.5" />
                   </a>
 
@@ -113,12 +126,12 @@ export const CreativeVenueSection: React.FC = () => {
                     {copied ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-700 font-bold">Copied!</span>
+                        <span className="text-emerald-700 font-bold">{language === 'te' ? 'కాపీ అయింది!' : 'Copied!'}</span>
                       </>
                     ) : (
                       <>
                         <Copy className="w-3.5 h-3.5 text-[#C59B27]" />
-                        <span>Copy Address</span>
+                        <span>{t('venue.copyAddress')}</span>
                       </>
                     )}
                   </button>
@@ -128,7 +141,7 @@ export const CreativeVenueSection: React.FC = () => {
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#25D366]/15 text-[#0F3D32] border border-[#25D366]/40 font-cinzel text-xs font-semibold hover:bg-[#25D366] hover:text-white transition-all shadow-xs cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
-                    <span>WhatsApp</span>
+                    <span>{language === 'te' ? 'వాట్సాప్' : 'WhatsApp'}</span>
                   </button>
                 </div>
               </div>
@@ -161,7 +174,7 @@ export const CreativeVenueSection: React.FC = () => {
                 <div className="bg-[#0F3D32] text-[#F1DFA6] px-5 py-3.5 flex items-center justify-between">
                   <div className="flex items-center gap-2 font-cinzel text-xs sm:text-sm font-semibold tracking-wider">
                     <MapPin className="w-4 h-4 text-[#D4AF37]" />
-                    <span>Vedika Function Hall, Yeleswaram</span>
+                    <span>{language === 'te' ? 'వేదిక ఫంక్షన్ హాల్, ఏలేశ్వరం' : 'Vedika Function Hall, Yeleswaram'}</span>
                   </div>
                   <a
                     href="https://maps.app.goo.gl/gLeSdH2zKB5729Lb6"
@@ -169,7 +182,7 @@ export const CreativeVenueSection: React.FC = () => {
                     rel="noopener noreferrer"
                     className="text-xs font-cinzel text-[#F1DFA6] hover:underline flex items-center gap-1 font-semibold"
                   >
-                    <span>Route Map</span>
+                    <span>{language === 'te' ? 'రూట్ మ్యాప్' : 'Route Map'}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -193,7 +206,7 @@ export const CreativeVenueSection: React.FC = () => {
                 <div className="bg-[#FFFDF9] border-t border-[#D4AF37]/40 px-4 py-2.5 flex items-center justify-between text-xs font-cinzel text-[#0F3D32]">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
-                    <span>Live GPS Destination Verified</span>
+                    <span>{language === 'te' ? 'GPS లొకేషన్ వెరిఫై చేయబడింది' : 'Live GPS Destination Verified'}</span>
                   </div>
                   <a 
                     href="https://maps.app.goo.gl/gLeSdH2zKB5729Lb6"
@@ -201,7 +214,7 @@ export const CreativeVenueSection: React.FC = () => {
                     rel="noopener noreferrer"
                     className="font-bold text-[#996515] hover:underline"
                   >
-                    Start Turn-by-Turn GPS Navigation →
+                    {language === 'te' ? 'గూగుల్ జీపీఎస్ నావిగేషన్ ప్రారంభించండి →' : 'Start Turn-by-Turn GPS Navigation →'}
                   </a>
                 </div>
               </div>

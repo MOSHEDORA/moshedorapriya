@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface ScrollRevealProps {
   children: React.ReactNode;
+  id?: string;
   direction?: 'up' | 'down' | 'left' | 'right' | 'zoom' | 'fade';
   delay?: number; // in ms
   duration?: number; // in ms
@@ -14,6 +15,7 @@ interface ScrollRevealProps {
 
 export const ScrollReveal: React.FC<ScrollRevealProps> = ({
   children,
+  id,
   direction = 'up',
   delay = 0,
   duration = 800,
@@ -85,6 +87,7 @@ export const ScrollReveal: React.FC<ScrollRevealProps> = ({
   return (
     <div
       ref={domRef}
+      id={id}
       className={`transition-all ${glow && isVisible ? 'drop-shadow-[0_10px_25px_rgba(212,175,55,0.15)]' : ''} ${className}`}
       style={{
         opacity: isVisible ? 1 : 0,

@@ -15,8 +15,10 @@ import { db } from '../lib/firebase';
 import { initialBlessings } from '../data/weddingData';
 import { BlessingNote } from '../types';
 import { ScrollReveal } from './ScrollReveal';
+import { useLanguage } from '../context/LanguageContext';
 
 export const BlessingsWall: React.FC = () => {
+  const { language, t } = useLanguage();
   const [blessings, setBlessings] = useState<BlessingNote[]>(() => {
     try {
       const saved = localStorage.getItem('moshe_priya_blessings');
@@ -75,12 +77,21 @@ export const BlessingsWall: React.FC = () => {
     };
   }, []);
 
-  const quickWishes = [
+  const quickWishesEn = [
     "God bless your sacred union with endless peace & joy! ✨",
     "Hearty congratulations Moshe Dora & Priya! Wishing you a blessed home. 💍",
     "May the Almighty guide your steps together always! 🌸",
     "Ecclesiastes 4:12 — A cord of three strands is never broken! 🕊️"
   ];
+
+  const quickWishesTe = [
+    "దేవుడు మీ పవిత్ర వివాహ బంధాన్ని సమాధానం, సంతోషాలతో నింపును గాక! ✨",
+    "మోషే దొర & ప్రియ గార్లకు హృదయపూర్వక వివాహ శుభాకాంక్షలు! 💍",
+    "సర్వశక్తిమంతుడైన దేవుడు మీ దాంపత్య జీవితాన్ని నిత్యం నడిపించును గాక! 🌸",
+    "ప్రసంగి 4:12 — ముప్పిరి త్రాడు త్వరగా తెగదు! 🕊️"
+  ];
+
+  const quickWishes = language === 'te' ? quickWishesTe : quickWishesEn;
 
   const handleLike = async (id: string) => {
     // Optimistic local update
@@ -175,19 +186,19 @@ export const BlessingsWall: React.FC = () => {
       <div className="absolute bottom-1/3 right-4 text-6xl opacity-15 pointer-events-none hidden md:block select-none">🌴</div>
 
       <div className="max-w-5xl mx-auto relative z-10">
-        {/* Section Header (Pure Wedding Titles with Jungle Accents) */}
+        {/* Section Header */}
         <ScrollReveal direction="up" threshold={0.15}>
           <div className="text-center mb-14">
             <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/90 px-5 py-2 rounded-full border border-[#D4AF37]/60 shadow-sm">
               <span className="text-sm">🌿</span>
-              <span>Wedding Guestbook &amp; Prayerful Wishes</span>
+              <span>{t('blessings.badge')}</span>
               <span className="text-sm">🌿</span>
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              Guest Blessings &amp; Prayers
+              {t('blessings.title')}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/85 italic max-w-xl mx-auto mt-2">
-              Read heartfelt prayers from loved ones and write your personal wedding blessings for Moshe Dora &amp; Priya.
+              {t('blessings.subtitle')}
             </p>
           </div>
         </ScrollReveal>
@@ -199,12 +210,12 @@ export const BlessingsWall: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-cinzel uppercase text-[#0F3D32] font-bold mb-1">
-                    Your Name *
+                    {t('blessings.yourName')}
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Uncle Samuel"
+                    placeholder={language === 'te' ? "ఉదా. శ్యామ్ సామ్యూల్" : "e.g. Uncle Samuel"}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-cormorant focus:outline-none focus:border-[#0F3D32]"
@@ -213,11 +224,11 @@ export const BlessingsWall: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-cinzel uppercase text-[#0F3D32] font-bold mb-1">
-                    Your City / Relation (Optional)
+                    {t('blessings.yourCity')}
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Kakinada / Friend"
+                    placeholder={language === 'te' ? "ఉదా. కాకినాడ / బంధువులు" : "e.g. Kakinada / Friend"}
                     value={newCity}
                     onChange={(e) => setNewCity(e.target.value)}
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-cormorant focus:outline-none focus:border-[#0F3D32]"
@@ -227,12 +238,12 @@ export const BlessingsWall: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-cinzel uppercase text-[#0F3D32] font-bold mb-1">
-                  Your Wedding Blessing / Prayer *
+                  {t('blessings.yourMessage')}
                 </label>
                 <textarea
                   required
                   rows={2}
-                  placeholder="Write your prayers and congratulatory wishes..."
+                  placeholder={language === 'te' ? "వధూవరుల కొరకు మీ ప్రార్థనలు మరియు శుభాకాంక్షలు వ్రాయండి..." : "Write your prayers and congratulatory wishes..."}
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-cormorant focus:outline-none focus:border-[#0F3D32]"
@@ -242,7 +253,7 @@ export const BlessingsWall: React.FC = () => {
               {/* Quick Wishes Chips */}
               <div>
                 <div className="text-[11px] font-cinzel text-gray-500 mb-1.5 uppercase tracking-wider font-semibold">
-                  Quick wishes (click to insert):
+                  {t('blessings.quickWishes')}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {quickWishes.map((w, idx) => (
@@ -261,10 +272,11 @@ export const BlessingsWall: React.FC = () => {
               <div className="text-right pt-2">
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#0F3D32] hover:bg-[#1B5A48] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
+                  disabled={isSubmitting}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#0F3D32] hover:bg-[#1B5A48] text-[#F1DFA6] font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Post Wedding Blessing</span>
+                  <span>{isSubmitting ? (language === 'te' ? 'జమచేస్తోంది...' : 'Posting...') : t('blessings.sendButton')}</span>
                 </button>
               </div>
             </form>
@@ -307,7 +319,7 @@ export const BlessingsWall: React.FC = () => {
 
                 <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
                   <span className="text-xs text-[#996515] font-cinzel font-medium">
-                    May God Bless This Union
+                    {language === 'te' ? 'దేవుడు ఈ దాంపత్యాన్ని ఆశీర్వదించును గాక' : 'May God Bless This Union'}
                   </span>
                   <button
                     onClick={() => handleLike(b.id)}

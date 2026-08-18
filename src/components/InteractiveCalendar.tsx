@@ -4,10 +4,12 @@ import confetti from 'canvas-confetti';
 import { weddingInfo } from '../data/weddingData';
 import { generateIcsFile, getGoogleCalendarUrl, getOutlookCalendarUrl, getYahooCalendarUrl } from '../utils/calendar';
 import { ScrollReveal } from './ScrollReveal';
+import { useLanguage } from '../context/LanguageContext';
 
 export const InteractiveCalendar: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<number>(3); // Default to wedding day Sep 3
   const [calendarAdded, setCalendarAdded] = useState(false);
+  const { language, t } = useLanguage();
 
   // Real-time Countdown calculation
   const weddingTimestamp = new Date(weddingInfo.weddingDate).getTime();
@@ -57,7 +59,9 @@ export const InteractiveCalendar: React.FC = () => {
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
-      `💍 Wedding Invitation: Moshe Dora & Priya\n📅 Date: Thursday, September 03, 2026 at 10:00 AM IST\n📍 Venue: Vedika Function Hall, Yeleswaram\n\nPlease join us and celebrate! View invitation details: ${window.location.href}`
+      language === 'te'
+        ? `💍 వివాహ ఆహ్వానం: వేల్నాటి మోషే దొర & నెల్లూరి ప్రియ\n📅 ముహూర్తం: గురువారం, సెప్టెంబర్ 03, 2026 ఉదయం 10:00 గంటలకు\n📍 వేదిక: వేదిక ఫంక్షన్ హాల్, ఏలేశ్వరం\n\nదయచేసి విచ్చేసి వధూవరులను ఆశీర్వదించండి! ఆహ్వాన పత్రిక: ${window.location.href}`
+        : `💍 Wedding Invitation: Moshe Dora & Priya\n📅 Date: Thursday, September 03, 2026 at 10:00 AM IST\n📍 Venue: Vedika Function Hall, Yeleswaram\n\nPlease join us and celebrate! View invitation details: ${window.location.href}`
     );
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
   };
@@ -76,6 +80,10 @@ export const InteractiveCalendar: React.FC = () => {
       isWedding: d === 3
     });
   }
+
+  const daysOfWeek = language === 'te' 
+    ? ['ఆది', 'సోమ', 'మంగళ', 'బుధ', 'గురు', 'శుక్ర', 'శని']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <section className="relative py-24 px-4 sm:px-6 bg-gradient-to-b from-[#F2F8F4] via-[#E8F2EC] to-[#F5F9F6] border-b border-[#D4AF37]/30 overflow-hidden" id="calendar">
@@ -98,14 +106,16 @@ export const InteractiveCalendar: React.FC = () => {
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/90 px-5 py-2 rounded-full border border-[#D4AF37]/60 shadow-sm">
               <span className="text-sm">🌿</span>
-              <span>Wedding Date &amp; Calendar · Sep 03, 2026</span>
+              <span>{t('calendar.badge')} · Sep 03, 2026</span>
               <span className="text-sm">🌿</span>
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              Date &amp; Calendar
+              {t('calendar.title')}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/85 italic max-w-xl mx-auto mt-2">
-              Mark your calendar for Thursday, September 03, 2026. Join us as we count down to the Holy Matrimony!
+              {language === 'te' 
+                ? 'గురువారం, సెప్టెంబర్ 03, 2026 వివాహ మహోత్సవానికి లైవ్ కౌంట్‌డౌన్!' 
+                : 'Mark your calendar for Thursday, September 03, 2026. Join us as we count down to the Holy Matrimony!'}
             </p>
           </div>
         </ScrollReveal>
@@ -123,20 +133,20 @@ export const InteractiveCalendar: React.FC = () => {
                   {/* Wedding Date Title */}
                   <div className="flex items-center gap-2 text-xs font-cinzel uppercase tracking-[0.25em] text-[#F1DFA6] font-bold mb-2">
                     <Sparkles className="w-4 h-4 text-[#D4AF37]" />
-                    <span>Wedding Date &amp; Time</span>
+                    <span>{language === 'te' ? 'శుభ ముహూర్తం' : 'Wedding Date & Time'}</span>
                   </div>
                   <h3 className="font-decorative text-2xl sm:text-3xl font-bold text-white mb-1">
-                    Thursday, September 03, 2026
+                    {t('hero.date')}
                   </h3>
                   <div className="inline-flex items-center gap-2 text-xs font-cinzel text-[#F1DFA6] bg-white/10 px-3.5 py-1.5 rounded-full border border-[#D4AF37]/30 mb-6">
                     <Clock className="w-3.5 h-3.5 text-[#D4AF37]" />
-                    <span>10:00 AM IST · Holy Matrimony &amp; Grand Feast</span>
+                    <span>{t('hero.time')} · {language === 'te' ? 'పరిశుద్ధ వివాహం & ప్రీతి భోజనం' : 'Holy Matrimony & Grand Feast'}</span>
                   </div>
 
                   {/* Live Countdown Timer Grid */}
                   <div className="mb-6">
                     <div className="text-[11px] font-cinzel uppercase tracking-widest text-[#F1DFA6]/80 mb-2">
-                      Live Countdown to Holy Matrimony
+                      {language === 'te' ? 'పరిశుద్ధ వివాహానికి మిగిలిన సమయం' : 'Live Countdown to Holy Matrimony'}
                     </div>
                     <div className="grid grid-cols-4 gap-2 sm:gap-3">
                       <div className="bg-white/10 backdrop-blur-md rounded-xl p-2.5 sm:p-3.5 border border-[#D4AF37]/40 text-center">
@@ -144,7 +154,7 @@ export const InteractiveCalendar: React.FC = () => {
                           {String(timeLeft.days).padStart(2, '0')}
                         </div>
                         <div className="font-cinzel text-[9px] sm:text-[10px] uppercase tracking-wider text-[#FFFDF9]/80 mt-0.5">
-                          Days
+                          {t('calendar.days')}
                         </div>
                       </div>
 
@@ -153,7 +163,7 @@ export const InteractiveCalendar: React.FC = () => {
                           {String(timeLeft.hours).padStart(2, '0')}
                         </div>
                         <div className="font-cinzel text-[9px] sm:text-[10px] uppercase tracking-wider text-[#FFFDF9]/80 mt-0.5">
-                          Hours
+                          {t('calendar.hours')}
                         </div>
                       </div>
 
@@ -162,7 +172,7 @@ export const InteractiveCalendar: React.FC = () => {
                           {String(timeLeft.minutes).padStart(2, '0')}
                         </div>
                         <div className="font-cinzel text-[9px] sm:text-[10px] uppercase tracking-wider text-[#FFFDF9]/80 mt-0.5">
-                          Mins
+                          {t('calendar.minutes')}
                         </div>
                       </div>
 
@@ -171,7 +181,7 @@ export const InteractiveCalendar: React.FC = () => {
                           {String(timeLeft.seconds).padStart(2, '0')}
                         </div>
                         <div className="font-cinzel text-[9px] sm:text-[10px] uppercase tracking-wider text-[#FFFDF9]/80 mt-0.5">
-                          Secs
+                          {t('calendar.seconds')}
                         </div>
                       </div>
                     </div>
@@ -201,7 +211,7 @@ export const InteractiveCalendar: React.FC = () => {
                       {calendarAdded ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-[#0F3D32]" />
-                          <span>Downloaded!</span>
+                          <span>{language === 'te' ? 'డౌన్‌లోడ్ అయింది!' : 'Downloaded!'}</span>
                         </>
                       ) : (
                         <>
@@ -217,7 +227,7 @@ export const InteractiveCalendar: React.FC = () => {
                     className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#25D366]/20 text-[#FFFDF9] border border-[#25D366]/50 font-cinzel text-xs font-semibold hover:bg-[#25D366] hover:text-white transition-all cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5" />
-                    <span>Forward Wedding Date on WhatsApp</span>
+                    <span>{language === 'te' ? 'వాట్సాప్‌లో వివాహ తేదీని షేర్ చేయండి' : 'Forward Wedding Date on WhatsApp'}</span>
                   </button>
                 </div>
               </div>
@@ -236,24 +246,24 @@ export const InteractiveCalendar: React.FC = () => {
                       </div>
                       <div>
                         <h4 className="font-decorative text-xl sm:text-2xl text-[#0F3D32] font-bold">
-                          September 2026
+                          {language === 'te' ? 'సెప్టెంబర్ 2026' : 'September 2026'}
                         </h4>
                         <p className="font-cinzel text-xs text-[#996515] uppercase tracking-wider font-semibold">
-                          Holy Matrimony Month
+                          {language === 'te' ? 'వివాహ మాసం' : 'Holy Matrimony Month'}
                         </p>
                       </div>
                     </div>
 
                     <div className="text-right">
                       <span className="bg-[#5E1626] text-[#FFFDF9] font-cinzel text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest shadow-sm">
-                        Wedding Day
+                        {language === 'te' ? 'వివాహ దినం' : 'Wedding Day'}
                       </span>
                     </div>
                   </div>
 
                   {/* Days of the Week Header */}
                   <div className="grid grid-cols-7 gap-1 text-center font-cinzel text-xs font-bold text-[#0F3D32] mb-3">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+                    {daysOfWeek.map((d, i) => (
                       <div key={d} className={`py-1.5 ${i === 0 ? 'text-[#5E1626]' : ''}`}>
                         {d}
                       </div>
@@ -295,7 +305,7 @@ export const InteractiveCalendar: React.FC = () => {
 
                           {isWeddingDay && (
                             <span className="text-[8px] uppercase font-bold tracking-tighter text-[#2b2205] leading-none">
-                              Wedding
+                              {language === 'te' ? 'వివాహం' : 'Wedding'}
                             </span>
                           )}
                         </button>
@@ -308,10 +318,12 @@ export const InteractiveCalendar: React.FC = () => {
                 <div className="mt-6 pt-4 border-t border-[#D4AF37]/20 text-xs font-cinzel flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
                   <div className="flex items-center gap-1.5">
                     <span className="w-3.5 h-3.5 rounded bg-gradient-to-br from-[#D4AF37] to-[#996515] inline-block shadow-xs flex-shrink-0" />
-                    <span className="text-[#0F3D32] font-bold">Sep 03, 2026 · Holy Matrimony</span>
+                    <span className="text-[#0F3D32] font-bold">
+                      {language === 'te' ? 'సెప్టెం 03, 2026 · పరిశుద్ధ వివాహం' : 'Sep 03, 2026 · Holy Matrimony'}
+                    </span>
                   </div>
                   <div className="text-[#996515] font-semibold">
-                    📍 Vedika Function Hall
+                    📍 {language === 'te' ? 'వేదిక ఫంక్షన్ హాల్' : 'Vedika Function Hall'}
                   </div>
                 </div>
               </div>

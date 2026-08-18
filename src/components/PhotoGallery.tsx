@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { PhotoItem } from '../types';
 import { ScrollReveal } from './ScrollReveal';
+import { useLanguage } from '../context/LanguageContext';
 
 interface PhotoGalleryProps {
   photos: PhotoItem[];
@@ -25,6 +26,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
   selectedPhoto,
   onSelectPhoto,
 }) => {
+  const { language, t } = useLanguage();
   const [photoLikes, setPhotoLikes] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem('moshe_priya_photo_likes_clean');
@@ -85,14 +87,14 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-2 font-cinzel text-xs uppercase tracking-[0.3em] text-[#0F3D32] font-semibold mb-2 bg-white/90 px-5 py-2 rounded-full border border-[#D4AF37]/60 shadow-sm">
               <span className="text-sm">🌿</span>
-              <span>Precious Memories &amp; Wedding Album</span>
+              <span>{t('gallery.badge')}</span>
               <span className="text-sm">🌿</span>
             </div>
             <h2 className="font-decorative text-3xl sm:text-4xl md:text-5xl text-[#0F3D32] font-bold">
-              Wedding Photo Gallery
+              {t('gallery.title')}
             </h2>
             <p className="font-cormorant text-lg sm:text-xl text-[#2A2A2A]/85 italic max-w-xl mx-auto mt-2">
-              A curated collection of cherished moments, portraits, and celebrations honoring Moshe Dora &amp; Priya.
+              {t('gallery.subtitle')}
             </p>
 
             <div className="flex items-center justify-center gap-3 mt-4">
@@ -136,7 +138,7 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                     {/* Top Badges */}
                     <div className="absolute top-3 left-3">
                       <span className="bg-[#0F3D32]/90 backdrop-blur-xs text-[#F1DFA6] text-[10px] font-cinzel font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider border border-[#D4AF37]/40 shadow-xs">
-                        Wedding Album
+                        {language === 'te' ? 'ఆల్బమ్' : 'Wedding Album'}
                       </span>
                     </div>
 
@@ -168,10 +170,13 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                       </p>
                     </div>
 
-                    <div className="mt-3 pt-2.5 border-t border-[#D4AF37]/25 flex items-center justify-between text-xs font-cinzel text-[#996515]">
-                      <span>Holy Matrimony Memories</span>
-                      <span className="flex items-center gap-1 text-[#5E1626] font-semibold">
-                        <Heart className={`w-3 h-3 ${likes > 0 ? 'fill-[#5E1626]' : ''}`} /> {likes > 0 ? `${likes} ${likes === 1 ? 'love' : 'loves'}` : 'Send Love'}
+                    <div className="mt-3 pt-2.5 border-t border-[#D4AF37]/20 flex items-center justify-between text-xs font-cinzel text-[#0F3D32]">
+                      <span className="text-[11px] text-[#996515] font-semibold">
+                        {language === 'te' ? 'మోషే దొర & ప్రియ' : 'Moshe Dora & Priya'}
+                      </span>
+                      <span className="text-xs text-[#5E1626] font-bold flex items-center gap-1">
+                        <span>❤️</span>
+                        <span>{likes}</span>
                       </span>
                     </div>
                   </div>
@@ -180,86 +185,55 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
             );
           })}
         </div>
+      </div>
 
-        {/* Fullscreen Lightbox Modal */}
-        {selectedPhoto && (
-          <div 
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+      {/* Lightbox Modal */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => onSelectPhoto(null)}
+        >
+          <button
             onClick={() => onSelectPhoto(null)}
+            className="absolute top-4 right-4 text-white hover:text-[#D4AF37] p-2 z-50 cursor-pointer"
           >
-            {/* Close Button */}
-            <button
-              onClick={() => onSelectPhoto(null)}
-              className="absolute top-5 right-5 text-white/80 hover:text-white p-2 rounded-full bg-white/10 transition-colors z-10 cursor-pointer"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <X className="w-8 h-8" />
+          </button>
 
-            {/* Prev & Next Arrows */}
-            <button
-              onClick={handlePrev}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all z-10 cursor-pointer"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
+          <button
+            onClick={handlePrev}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white hover:text-[#D4AF37] p-3 rounded-full bg-black/40 hover:bg-black/70 z-50 cursor-pointer"
+          >
+            <ChevronLeft className="w-8 h-8" />
+          </button>
 
-            <button
-              onClick={handleNext}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all z-10 cursor-pointer"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
+          <button
+            onClick={handleNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-[#D4AF37] p-3 rounded-full bg-black/40 hover:bg-black/70 z-50 cursor-pointer"
+          >
+            <ChevronRight className="w-8 h-8" />
+          </button>
 
-            {/* Lightbox Content */}
-            <div 
-              className="relative max-w-4xl max-h-[90vh] bg-[#FFFDF9] rounded-2xl overflow-hidden border-2 border-[#D4AF37] shadow-2xl flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="relative max-h-[70vh] bg-black flex items-center justify-center overflow-hidden">
-                <img
-                  src={selectedPhoto.imageUrl}
-                  alt={selectedPhoto.title}
-                  className="max-h-[70vh] w-auto max-w-full object-contain"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (!target.dataset.triedFallback) {
-                      target.dataset.triedFallback = 'true';
-                      target.src = selectedPhoto.imageUrl.startsWith('/assets/')
-                        ? selectedPhoto.imageUrl.replace('/assets/', '/')
-                        : `/assets${selectedPhoto.imageUrl}`;
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="p-6 bg-[#FFFDF9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <div className="font-cinzel text-xs uppercase tracking-widest text-[#996515] font-bold">
-                    Wedding Album
-                  </div>
-                  <h3 className="font-decorative text-2xl text-[#0F3D32] font-bold">
-                    {selectedPhoto.title}
-                  </h3>
-                  <p className="font-cormorant text-base text-[#2A2A2A] italic mt-1">
-                    "{selectedPhoto.caption}"
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={(e) => handleLike(selectedPhoto.id, e)}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#5E1626] text-white font-cinzel text-xs font-semibold hover:bg-[#7e1e33] transition-colors cursor-pointer shadow-sm"
-                  >
-                    <Heart className="w-3.5 h-3.5 fill-current" />
-                    <span>{photoLikes[selectedPhoto.id] || 0} Loves</span>
-                  </button>
-                </div>
-              </div>
+          <div 
+            className="max-w-4xl max-h-[85vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={selectedPhoto.imageUrl}
+              alt={selectedPhoto.title}
+              className="max-w-full max-h-[70vh] object-contain rounded-lg border border-[#D4AF37]/50"
+            />
+            <div className="text-center text-white mt-4 max-w-xl">
+              <h3 className="font-decorative text-2xl text-[#F1DFA6] font-bold">
+                {selectedPhoto.title}
+              </h3>
+              <p className="font-cormorant text-base italic text-[#FFFDF9]/90 mt-1">
+                {selectedPhoto.caption}
+              </p>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 };
