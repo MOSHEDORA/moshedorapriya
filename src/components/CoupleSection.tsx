@@ -167,7 +167,7 @@ export const CoupleSection: React.FC<CoupleSectionProps> = ({
 
                   <div className="mt-4 pt-3 border-t border-[#D4AF37]/30 flex items-center justify-center sm:justify-start gap-2 text-xs font-cinzel text-[#0F3D32]">
                     <Sparkles className="w-3.5 h-3.5 text-[#C59B27]" />
-                    <span>Blessings &amp; Honour in Christ</span>
+                    <span>Velnati Lineage. Blessings &amp; Honour in Christ</span>
                   </div>
                 </div>
               </div>
