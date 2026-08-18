@@ -121,6 +121,15 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                       alt={photo.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedFallback) {
+                          target.dataset.triedFallback = 'true';
+                          target.src = photo.imageUrl.startsWith('/assets/')
+                            ? photo.imageUrl.replace('/assets/', '/')
+                            : `/assets${photo.imageUrl}`;
+                        }
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20 opacity-60 group-hover:opacity-85 transition-opacity" />
 
@@ -212,6 +221,15 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                   alt={selectedPhoto.title}
                   className="max-h-[70vh] w-auto max-w-full object-contain"
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.dataset.triedFallback) {
+                      target.dataset.triedFallback = 'true';
+                      target.src = selectedPhoto.imageUrl.startsWith('/assets/')
+                        ? selectedPhoto.imageUrl.replace('/assets/', '/')
+                        : `/assets${selectedPhoto.imageUrl}`;
+                    }
+                  }}
                 />
               </div>
 

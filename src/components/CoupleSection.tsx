@@ -80,6 +80,15 @@ export const CoupleSection: React.FC<CoupleSectionProps> = ({
                   alt={`${weddingInfo.groom.name} & ${weddingInfo.bride.name}`}
                   className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.dataset.triedFallback) {
+                      target.dataset.triedFallback = 'true';
+                      target.src = coupleHero.imageUrl.startsWith('/assets/')
+                        ? coupleHero.imageUrl.replace('/assets/', '/')
+                        : `/assets${coupleHero.imageUrl}`;
+                    }
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0F3D32]/90 via-black/20 to-transparent opacity-90 group-hover:opacity-95 transition-opacity" />
                 
@@ -125,6 +134,15 @@ export const CoupleSection: React.FC<CoupleSectionProps> = ({
                     alt={weddingInfo.groom.name}
                     className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.dataset.triedFallback) {
+                        target.dataset.triedFallback = 'true';
+                        target.src = groomPhoto.imageUrl.startsWith('/assets/')
+                          ? groomPhoto.imageUrl.replace('/assets/', '/')
+                          : `/assets${groomPhoto.imageUrl}`;
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
                   <div className="absolute bottom-1.5 right-1.5 bg-[#0F3D32] text-[#F1DFA6] text-[10px] font-cinzel px-2.5 py-0.5 rounded-full border border-[#D4AF37]/50 shadow-xs font-semibold">
@@ -173,6 +191,15 @@ export const CoupleSection: React.FC<CoupleSectionProps> = ({
                     alt={weddingInfo.bride.name}
                     className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.dataset.triedFallback) {
+                        target.dataset.triedFallback = 'true';
+                        target.src = bridePhoto.imageUrl.startsWith('/assets/')
+                          ? bridePhoto.imageUrl.replace('/assets/', '/')
+                          : `/assets${bridePhoto.imageUrl}`;
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
                   <div className="absolute bottom-1.5 right-1.5 bg-[#5E1626] text-[#F1DFA6] text-[10px] font-cinzel px-2.5 py-0.5 rounded-full border border-[#D4AF37]/50 shadow-xs font-semibold">

@@ -141,6 +141,55 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------
+  // STATIC ASSETS & WEDDING PHOTOS SERVING
+  // -------------------------------------------------------------
+  const assetDirectories = [
+    path.join(process.cwd(), "public", "assets"),
+    path.join(process.cwd(), "assets"),
+    path.join(process.cwd(), "public"),
+    process.cwd()
+  ];
+
+  // Specific handler for /assets/* and image requests
+  app.get(["/assets/:filename(*)", "/:filename(*)"], (req, res, next) => {
+    const rawFilename = req.params.filename || "";
+    const cleanFilename = path.basename(rawFilename);
+
+    if (!cleanFilename || (!cleanFilename.match(/\.(jpg|jpeg|png|webp|gif|svg|ico|mp3|wav)$/i) && !cleanFilename.startsWith("DSC"))) {
+      return next();
+    }
+
+    for (const dir of assetDirectories) {
+      if (!fs.existsSync(dir)) continue;
+
+      // 1. Direct path check
+      const exactPath = path.join(dir, cleanFilename);
+      if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
+        return res.sendFile(exactPath);
+      }
+
+      // 2. Case-insensitive lookup
+      try {
+        const files = fs.readdirSync(dir);
+        const match = files.find(f => f.toLowerCase() === cleanFilename.toLowerCase());
+        if (match) {
+          const matchPath = path.join(dir, match);
+          if (fs.statSync(matchPath).isFile()) {
+            return res.sendFile(matchPath);
+          }
+        }
+      } catch {}
+    }
+    next();
+  });
+
+  app.use("/assets", express.static(path.join(process.cwd(), "public", "assets")));
+  app.use("/assets", express.static(path.join(process.cwd(), "assets")));
+  app.use("/public", express.static(path.join(process.cwd(), "public")));
+  app.use(express.static(path.join(process.cwd(), "public")));
+  app.use(express.static(path.join(process.cwd(), "assets")));
+
+  // -------------------------------------------------------------
   // VITE / STATIC SERVING
   // -------------------------------------------------------------
   if (process.env.NODE_ENV !== "production") {

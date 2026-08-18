@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Game scores collection - open for wedding guests to read and update
+    match /game_scores/{scoreId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.moshe is number
+                           && request.resource.data.priya is number
+                           && request.resource.data.totalPlays is number;
+      allow delete: if false;
+    }
+
+    // Blessings collection - guests can post, read, and like blessings
+    match /blessings/{blessingId} {
+      allow read: if true;
+      allow create: if request.resource.data.name is string
+                   && request.resource.data.name.size() > 0
+                   && request.resource.data.message is string
+                   && request.resource.data.message.size() > 0;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']);
+      allow delete: if false;
+    }
+  }
+}

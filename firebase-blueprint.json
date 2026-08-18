@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "GameScores": {
+      "title": "GameScores",
+      "description": "Global aggregated game scores for Groom and Bride teams",
+      "type": "object",
+      "properties": {
+        "moshe": {
+          "type": "number",
+          "description": "Total score for Groom Moshe Dora"
+        },
+        "priya": {
+          "type": "number",
+          "description": "Total score for Bride Priya"
+        },
+        "totalPlays": {
+          "type": "number",
+          "description": "Total number of game rounds played by guests"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "ISO timestamp of the last update"
+        }
+      },
+      "required": ["moshe", "priya", "totalPlays"]
+    },
+    "Blessing": {
+      "title": "Blessing",
+      "description": "Guest blessing and prayer note",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the guest"
+        },
+        "city": {
+          "type": "string",
+          "description": "City or relation of the guest"
+        },
+        "message": {
+          "type": "string",
+          "description": "Heartfelt wedding wish or prayer"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Formatted date or timestamp"
+        },
+        "likes": {
+          "type": "number",
+          "description": "Number of likes"
+        }
+      },
+      "required": ["name", "message"]
+    }
+  },
+  "firestore": {
+    "/game_scores/{scoreId}": {
+      "schema": "GameScores",
+      "description": "Shared real-time scores for wedding fun games"
+    },
+    "/blessings/{blessingId}": {
+      "schema": "Blessing",
+      "description": "Real-time guest blessings collection"
+    }
+  }
+}

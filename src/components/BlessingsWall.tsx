@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, MessageSquare, Send, Sparkles, User, ThumbsUp } from 'lucide-react';
+import { 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  updateDoc, 
+  increment, 
+  query, 
+  orderBy, 
+  limit 
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { initialBlessings } from '../data/weddingData';
 import { BlessingNote } from '../types';
 import { ScrollReveal } from './ScrollReveal';
@@ -19,31 +31,47 @@ export const BlessingsWall: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Sync blessings from server periodically
+  // Sync blessings from Firestore in real-time
   useEffect(() => {
-    let isMounted = true;
-    const fetchBlessings = async () => {
-      try {
-        const res = await fetch('/api/blessings');
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data)) {
-            setBlessings(data);
-            try {
-              localStorage.setItem('moshe_priya_blessings', JSON.stringify(data));
-            } catch {}
-          }
-        }
-      } catch (err) {
-        // graceful offline fallback
-      }
-    };
+    const blessingsCol = collection(db, 'blessings');
+    const q = query(blessingsCol, orderBy('timestampRaw', 'desc'), limit(50));
 
-    fetchBlessings();
-    const interval = setInterval(fetchBlessings, 4000);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const notes: BlessingNote[] = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              name: data.name || 'Well-wisher',
+              city: data.city || undefined,
+              message: data.message || '',
+              timestamp: data.timestamp || 'Recently',
+              likes: Number(data.likes) || 1,
+              isUserAdded: true
+            };
+          });
+          setBlessings(notes);
+          try {
+            localStorage.setItem('moshe_priya_blessings', JSON.stringify(notes));
+          } catch {}
+        }
+      },
+      (err) => {
+        console.warn('Firestore blessings listener fallback to server API:', err);
+        // Fallback polling
+        fetch('/api/blessings')
+          .then((res) => res.json())
+          .then((data) => {
+            if (Array.isArray(data)) setBlessings(data);
+          })
+          .catch(() => {});
+      }
+    );
+
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 
@@ -60,15 +88,17 @@ export const BlessingsWall: React.FC = () => {
     setBlessings(updated);
     try {
       localStorage.setItem('moshe_priya_blessings', JSON.stringify(updated));
-      const res = await fetch(`/api/blessings/${id}/like`, { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.blessings) {
-          setBlessings(data.blessings);
-        }
-      }
-    } catch (e) {
-      console.warn('Network sync notice for like:', e);
+    } catch {}
+
+    // Firestore update
+    try {
+      const blessingDocRef = doc(db, 'blessings', id);
+      await updateDoc(blessingDocRef, {
+        likes: increment(1)
+      });
+    } catch (err) {
+      // Dual fallback to server endpoint
+      fetch(`/api/blessings/${id}/like`, { method: 'POST' }).catch(() => {});
     }
   };
 
@@ -77,12 +107,16 @@ export const BlessingsWall: React.FC = () => {
     if (!newName.trim() || !newMessage.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
+    const newId = `blessing-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const nowIso = new Date().toISOString();
+
     const tempNote: BlessingNote = {
-      id: `blessing-${Date.now()}`,
+      id: newId,
       name: newName.trim(),
       city: newCity.trim() || undefined,
       message: newMessage.trim(),
-      timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      timestamp: formattedDate,
       likes: 1,
       isUserAdded: true
     };
@@ -103,26 +137,30 @@ export const BlessingsWall: React.FC = () => {
     setNewMessage('');
 
     try {
-      const res = await fetch('/api/blessings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: payloadName,
-          city: payloadCity,
-          message: payloadMessage
-        })
+      // 1. Write to Firestore
+      const docRef = doc(db, 'blessings', newId);
+      await setDoc(docRef, {
+        name: payloadName,
+        city: payloadCity || '',
+        message: payloadMessage,
+        timestamp: formattedDate,
+        timestampRaw: nowIso,
+        likes: 1
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.blessings) {
-          setBlessings(data.blessings);
-          try {
-            localStorage.setItem('moshe_priya_blessings', JSON.stringify(data.blessings));
-          } catch {}
-        }
-      }
     } catch (err) {
-      console.warn('Network sync notice for blessing:', err);
+      console.warn('Firestore write fallback to server API:', err);
+      // 2. Dual fallback to server endpoint
+      try {
+        await fetch('/api/blessings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: payloadName,
+            city: payloadCity,
+            message: payloadMessage
+          })
+        });
+      } catch {}
     } finally {
       setIsSubmitting(false);
     }

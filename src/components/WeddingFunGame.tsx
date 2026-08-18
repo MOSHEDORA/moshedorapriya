@@ -5,20 +5,22 @@ import {
   RotateCw, 
   Trophy, 
   Heart, 
-  Award,
-  Play,
-  Flame,
-  Star,
-  Target,
-  UserCheck,
-  Zap,
-  TrendingUp,
-  Share2,
-  Check,
-  Trees,
+  Award, 
+  Play, 
+  Flame, 
+  Star, 
+  Target, 
+  UserCheck, 
+  Zap, 
+  TrendingUp, 
+  Share2, 
+  Check, 
+  Trees, 
   Flower2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { doc, onSnapshot, setDoc, increment } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { ScrollReveal } from './ScrollReveal';
 
 // Persistent LocalStorage Keys (Genuine guest data)
@@ -78,40 +80,46 @@ export const WeddingFunGame: React.FC = () => {
 
   const [recentPointFlyout, setRecentPointFlyout] = useState<{ team: 'moshe' | 'priya'; pts: number } | null>(null);
 
-  // Sync with global shared scores on mount & poll every 3 seconds
+  // Sync with Firestore real-time listener (updates globally in real time for all users)
   useEffect(() => {
-    let isMounted = true;
-    const fetchGlobalScores = async () => {
-      try {
-        const res = await fetch('/api/scores');
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && data) {
-            const nextScores = {
-              moshe: Number(data.moshe) || 0,
-              priya: Number(data.priya) || 0,
-              totalPlays: Number(data.totalPlays) || 0
-            };
-            setTeamScores(nextScores);
-            try {
-              localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(nextScores));
-            } catch {}
-          }
-        }
-      } catch (e) {
-        // Fallback gracefully
-      }
-    };
+    const scoresDocRef = doc(db, 'game_scores', 'global_scores');
 
-    fetchGlobalScores();
-    const interval = setInterval(fetchGlobalScores, 3000);
+    // 1. Real-time Firebase Firestore listener
+    const unsubscribe = onSnapshot(
+      scoresDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const nextScores = {
+            moshe: Number(data.moshe) || 0,
+            priya: Number(data.priya) || 0,
+            totalPlays: Number(data.totalPlays) || 0
+          };
+          setTeamScores(nextScores);
+          try {
+            localStorage.setItem(STORAGE_TEAM_SCORES_KEY, JSON.stringify(nextScores));
+          } catch {}
+        } else {
+          // Initialize global document if first time
+          setDoc(scoresDocRef, {
+            moshe: 0,
+            priya: 0,
+            totalPlays: 0,
+            lastUpdated: new Date().toISOString()
+          }, { merge: true }).catch(console.error);
+        }
+      },
+      (err) => {
+        console.warn('Firestore snapshot error (using fallback):', err);
+      }
+    );
+
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 
-  // Helper to persist scores globally across all users & locally
+  // Helper to persist scores globally to Firestore & locally
   const addPointsToTeam = async (points: number, targetTeam?: 'moshe' | 'priya') => {
     const team = targetTeam || userTeam;
 
@@ -132,26 +140,30 @@ export const WeddingFunGame: React.FC = () => {
     setRecentPointFlyout({ team, pts: points });
     setTimeout(() => setRecentPointFlyout(null), 2000);
 
-    // 3. Post to backend server so all other users get points in real-time
+    // 3. Atomically increment Firestore score document in real time
     try {
-      const res = await fetch('/api/scores', {
+      const scoresDocRef = doc(db, 'game_scores', 'global_scores');
+      await setDoc(
+        scoresDocRef,
+        {
+          [team]: increment(points),
+          totalPlays: increment(1),
+          lastUpdated: new Date().toISOString()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Firestore write warning:', err);
+    }
+
+    // 4. Also notify backend endpoint as dual redundancy
+    try {
+      fetch('/api/scores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ team, points })
-      });
-      if (res.ok) {
-        const result = await res.json();
-        if (result?.scores) {
-          setTeamScores({
-            moshe: Number(result.scores.moshe) || 0,
-            priya: Number(result.scores.priya) || 0,
-            totalPlays: Number(result.scores.totalPlays) || 0
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('Network sync notice (saved locally):', err);
-    }
+      }).catch(() => {});
+    } catch {}
   };
 
   const handleSelectTeam = (team: 'moshe' | 'priya') => {

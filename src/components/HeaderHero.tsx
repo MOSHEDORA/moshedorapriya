@@ -97,6 +97,15 @@ export const HeaderHero: React.FC = () => {
                 alt="Velnati Moshe Dora and Nelluri Priya"
                 className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.triedFallback) {
+                    target.dataset.triedFallback = 'true';
+                    target.src = coupleHeroPhoto.startsWith('/assets/')
+                      ? coupleHeroPhoto.replace('/assets/', '/')
+                      : `/assets${coupleHeroPhoto}`;
+                  }
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20 opacity-75" />
               
